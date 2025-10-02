@@ -2,9 +2,26 @@ version: '3.8'
 
 services:
   db:
-    image: postgres
+    image: postgres:latest
     env_file: '.env'
     ports:
       - '5432:5432'
     volumes:
       - ./volumes/postgres:/var/lib/postgresql/data
+
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+  
+  # ollama:
+  #   image: ollama/ollama
+  #   ports:
+  #     - '11434:11434'
+  #   volumes:
+  #     - ./volumes/ollama:/root/.ollama
+
+
+networks:
+  default:
+    name: service_netwok

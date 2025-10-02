@@ -1,155 +1,226 @@
-import random
+from aiogram import Bot, Dispatcher, F
+from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import (
+    BotCommand,
+    KeyboardButton,
+    Message,
+    ReplyKeyboardMarkup,
+)
+from aiogram.types.callback_query import CallbackQuery
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from src.core.constansts import Constants
+from src.services.db_service import DbService
+from src.services.redis_service import RedisService
+from enum import Enum
 
-import telebot
-from googletrans import Translator
-from telebot import types
-
-from main_conf import MainConf
-from src.fill_db import fill_db
-from variants import Variants
-from factory import factory
-
-BOT = telebot.TeleBot(MainConf.BOT_TOKEN)
-DATABASE = factory.create_database()
-variants = Variants()
-translator = Translator()
-
-
-class ChatStateManager:
-    def __init__(self):
-        self.current_words = {}
-
-    def set_words(self, chat_id, target_word, other_words):
-        self.current_words[chat_id] = [target_word, other_words]
-
-    def get_target_word(self, chat_id):
-        try:
-            return self.current_words.get(chat_id)[0]
-        except (KeyError, TypeError):
-            return None
-
-    def get_other_words(self, chat_id):
-        try:
-            return self.current_words.get(chat_id)[1]
-        except (KeyError, TypeError):
-            return None
+from src.utils.choose_words import choose_words
 
 
-chat_state_manager = ChatStateManager()
-
-
-class Command:
+class ButtonsText(Enum):
     ADD_WORD = "Добавить слово ➕"
     DELETE_WORD = "Удалить слово ➖"
-    NEXT = "Дальше ⬆️"
+    TEST = "Тест 📝"
+    NEW_WORDS = "Новые слова 📜"
+    REPEAT = "Повторение 🔁"
+    BASE = "Базовый"
+    ADVANCED = "Продвинутый"
 
 
-@BOT.message_handler(commands=["start"])
-def send_welcome(message):
-    chat_id = message.chat.id
-    BOT.send_photo(chat_id, open("images/monkey_education.jpg", "rb"))
-    BOT.send_message(chat_id, "Привет!👋 Давай вместе учить испанский!📚")
-    BOT.send_message(chat_id, "Введи /help для просмотра доступных команд ⚙️")
+class MsgsText(Enum):
+    START = "Bienvenido amigo! Желаю хорошо провести время за изучением нового ☝"
+    CHOOSE_DIFF = "Выберите уровень сложности слов 🎮"
+    SHOWED_WORDS = "Твои слова 👇 Как запомнишь - жми на кнопку 📝\n\n"
+    TRANSLATE = "❓ Переведите слово: "
+    WRONG_ANS = "Неправильно 😔\n"
+    CORRECT_ANSWER = "Правильно ✔️\n"
+    FINISH_LEARNING = (
+        "Поздравляю! Вы выучили все новые слова, теперь они доступны для повторения. "
+        "Так же можно получить порцию новых слов 😎"
+    )
 
 
-@BOT.message_handler(commands=["help"])
-def send_help(message):
-    chat_id = message.chat.id
-    BOT.send_message(chat_id, "Доступные команды:\n/start\n/help\n/cards")
+class AnswerRequest(StatesGroup):
+    waiting_for_answer = State()
 
 
-@BOT.message_handler(commands=["cards"])
-def create_cards(message):
-    markup = types.ReplyKeyboardMarkup(row_width=2)
-    chat_id = message.chat.id
-    if not DATABASE.cycle:
-        BOT.send_message(chat_id, "Ты прошёл весь круг, давай закрепим!👏")
-        DATABASE.cycle = True
-    if not DATABASE.remaining_main_words.get(
-        chat_id
-    ) and not DATABASE.remaining_user_words.get(chat_id):
-        DATABASE.get_remaining_words(chat_id)
-    word_data = DATABASE.get_random_word(chat_id)
-    russian_word = word_data[0][0]
-    target_word = word_data[0][1]
-    target_word_btn = types.KeyboardButton(target_word)
-    other_words = word_data[1]
-    chat_state_manager.set_words(chat_id, target_word, other_words)
-    other_words_btns = [types.KeyboardButton(word) for word in other_words]
-    buttons = [target_word_btn] + other_words_btns
-    random.shuffle(buttons)
-    next_btn = types.KeyboardButton(Command.ADD_WORD)
-    add_word_btn = types.KeyboardButton(Command.DELETE_WORD)
-    delete_word_btn = types.KeyboardButton(Command.NEXT)
-    buttons.extend([next_btn, add_word_btn, delete_word_btn])
+class LangBot:
+    def __init__(
+        self,
+        dp: Dispatcher,
+        bot_obj: Bot,
+        db_service: DbService,
+        redis_service: RedisService,
+    ) -> None:
+        self._dp = dp
+        self._bot_obj = bot_obj
+        self._db_service = db_service
+        self._redis_service = redis_service
 
-    markup.add(*buttons)
-    BOT.send_message(chat_id, f'Переведи слово "{russian_word}"', reply_markup=markup)
+    async def start(self) -> None:
+        await self._set_commands()
+        self._start_cmd_handler()
+        self._handle_show_new_words()
+        self._handle_learn_new_words()
+        self._handle_answer()
+        self._handle_difficulty()
+        await self._dp.start_polling(self._bot_obj)
 
+    def _start_cmd_handler(self) -> None:
+        @self._dp.message(CommandStart())
+        async def handle(msg: Message) -> None:
+            keyboard = self._build_main_keyboard()
+            await msg.answer(text=MsgsText.START.value, reply_markup=keyboard)
 
-@BOT.message_handler(func=lambda message: message.text == Command.NEXT)
-def next_cards(message):
-    create_cards(message)
+    async def _set_commands(self) -> None:
+        commands = [BotCommand(command="start", description="Start cmd")]
+        await self._bot_obj.set_my_commands(commands)
 
+    def _build_main_keyboard(self) -> None:
+        keyboard = ReplyKeyboardMarkup(
+            keyboard=[
+                [
+                    KeyboardButton(text=ButtonsText.NEW_WORDS.value),
+                    KeyboardButton(text=ButtonsText.REPEAT.value),
+                ],
+                [
+                    KeyboardButton(text=ButtonsText.ADD_WORD.value),
+                ],
+            ],
+            resize_keyboard=True,
+        )
+        return keyboard
 
-@BOT.message_handler(
-    func=lambda message: chat_state_manager.get_other_words(message.chat.id)
-    and message.text in chat_state_manager.get_other_words(message.chat.id)
-    or message.text == chat_state_manager.get_target_word(message.chat.id)
-)
-def message_reply(message):
-    chat_id = message.chat.id
-    current_target_word = chat_state_manager.get_target_word(chat_id)
-    current_other_words = chat_state_manager.get_other_words(chat_id)
-    if current_target_word and message.text == current_target_word:
-        BOT.send_message(chat_id, "Правильно!👍")
-        create_cards(message)
-    if message.text in current_other_words:
-        BOT.send_message(chat_id, "Неправильно, попробуй ещё раз!❌")
+    def _handle_difficulty(self) -> None:
+        @self._dp.message(F.text == ButtonsText.NEW_WORDS.value)
+        async def handle(msg: Message) -> None:
+            builder = InlineKeyboardBuilder()
+            builder.button(
+                text=ButtonsText.BASE.value, callback_data=ButtonsText.BASE.value
+            )
+            builder.button(
+                text=ButtonsText.ADVANCED.value,
+                callback_data=ButtonsText.ADVANCED.value,
+            )
+            builder.adjust(1)
+            await msg.answer(
+                text=MsgsText.CHOOSE_DIFF.value, reply_markup=builder.as_markup()
+            )
 
+    def _handle_show_new_words(self) -> None:
+        @self._dp.callback_query(
+            F.data.in_([ButtonsText.BASE.value, ButtonsText.ADVANCED.value])
+        )
+        async def handle(callback: CallbackQuery) -> None:
+            chat_id = callback.message.chat.id
+            diff = callback.data
+            path = (
+                Constants.BASE_WORDS_FILE_PATH.value
+                if diff == ButtonsText.BASE.value
+                else Constants.WORDS_FILE_PATH.value
+            )
+            words = choose_words(Constants.SHOW_COUNT.value, path)
+            await self._redis_service.set_user_words(chat_id, words)
+            ans = self._redis_service.show_all_words()
+            builder = InlineKeyboardBuilder()
+            builder.button(
+                text=ButtonsText.TEST.value, callback_data=ButtonsText.TEST.value
+            )
+            builder.adjust(1)
+            await callback.message.edit_text(
+                text=f"{MsgsText.SHOWED_WORDS.value}{ans}",
+                reply_markup=builder.as_markup(),
+            )
+            await callback.answer()
 
-@BOT.message_handler(func=lambda message: message.text == Command.ADD_WORD)
-def add_word(message):
-    chat_id = message.chat.id
-    msg = BOT.send_message(chat_id, "Введи русское слово")
-    BOT.register_next_step_handler(msg, process_added_word)
+    def _build_choice_inline_keyboard(
+        self, variants: list[str]
+    ) -> InlineKeyboardBuilder:
+        builder = InlineKeyboardBuilder()
+        for v in variants:
+            builder.button(text=v, callback_data=v)
+        builder.adjust(1)
+        return builder
 
+    async def _generate_question(
+        self,
+        chat_id: int,
+        state: FSMContext,
+        word_data: tuple[dict[str, str] | str] | None = None,
+        variants: list[str] | None = None,
+    ) -> tuple[str | InlineKeyboardBuilder]:
+        if not word_data:
+            word_data = self._redis_service.show_word(chat_id)
+            if not word_data:
+                return
+        if not variants:
+            variants = choose_words(Constants.VARIANTS_COUNT.value)
+        word_tr, redis_key = word_data
+        word = list(word_tr.keys())[0]
+        if word not in variants:
+            variants.append(word)
+        state_data = {"word_tr": word_tr, "redis_key": redis_key, "variants": variants}
+        await state.update_data(state_data)
+        await state.set_state(AnswerRequest.waiting_for_answer)
+        builder = self._build_choice_inline_keyboard(variants)
+        text = f"{MsgsText.TRANSLATE.value}{list(word_tr.values())[0]}"
+        return text, builder
 
-def process_added_word(message):
-    word_to_add = message.text.capitalize()
-    chat_id = message.chat.id
-    if word_to_add not in DATABASE.get_all_words(chat_id):
-        translation = translator.translate(word_to_add, dest="spanish").text
-        DATABASE.fill_table_users_words(word_to_add, translation, chat_id)
-        word_id = DATABASE.get_user_word_id(word_to_add, chat_id)
-        translations = variants.choose_variants()
-        DATABASE.fill_table_users_words_variants(word_id, translations)
-        BOT.send_message(chat_id, f'Слово "{word_to_add}" успешно добавлено')
-    else:
-        BOT.send_message(chat_id, f'Слово "{word_to_add}" уже есть')
-        add_word(message)
+    async def _finish_cycle(self, callback: CallbackQuery) -> None:
+        text = MsgsText.FINISH_LEARNING.value
+        await callback.message.answer(text=text)
+        await callback.answer()
 
+    def _handle_learn_new_words(self) -> None:
+        @self._dp.callback_query(F.data == ButtonsText.TEST.value)
+        async def handle(callback: CallbackQuery, state: FSMContext):
+            text, builder = await self._generate_question(
+                callback.message.chat.id, state
+            )
+            await callback.message.edit_text(
+                text=text,
+                reply_markup=builder.as_markup(),
+            )
+            await callback.answer()
 
-@BOT.message_handler(func=lambda message: message.text == Command.DELETE_WORD)
-def delete_word(message):
-    chat_id = message.chat.id
-    msg = BOT.send_message(chat_id, "Какое слово нужно удалить?")
-    BOT.register_next_step_handler(msg, process_deleted_word)
-
-
-def process_deleted_word(message):
-    chat_id = message.chat.id
-    word_to_delete = message.text.capitalize()
-    if word_to_delete not in DATABASE.get_user_words(chat_id):
-        BOT.send_message(chat_id, "Данное слово удалить нельзя")
-        delete_word(message)
-    else:
-        DATABASE.delete_user_word(word_to_delete, chat_id)
-        BOT.send_message(chat_id, f'Слово "{word_to_delete}" успешно удалено')
-
-
-if __name__ == "__main__":
-    fill_db(DATABASE)
-    print("DB initialized correctly.")
-    print("Starting telegram bot...")
-    BOT.polling()
+    def _handle_answer(self) -> None:
+        @self._dp.callback_query(AnswerRequest.waiting_for_answer)
+        async def handle(callback: CallbackQuery, state: FSMContext) -> None:
+            chat_id = callback.message.chat.id
+            ans = callback.data
+            state_data = await state.get_data()
+            word_tr, redis_key, variants = (
+                state_data["word_tr"],
+                state_data["redis_key"],
+                state_data["variants"],
+            )
+            await state.clear()
+            correct_ans = list(word_tr.keys())[0]
+            if ans == correct_ans:
+                if not await self._generate_question(chat_id, state):
+                    await self._finish_cycle(callback)
+                    return
+                else:
+                    self._redis_service.reduce_word_attempts_count(
+                        chat_id, word_tr, redis_key
+                    )
+                    next_step = await self._generate_question(chat_id, state)
+                    if not next_step:
+                        await self._finish_cycle(callback)
+                        return
+                    text, builder = next_step
+                    new_text = f"{MsgsText.CORRECT_ANSWER.value}{text}"
+                    await callback.message.edit_text(
+                        text=new_text, reply_markup=builder.as_markup()
+                    )
+                    await callback.answer()
+            else:
+                text, builder = await self._generate_question(
+                    chat_id, state, (word_tr, redis_key), variants
+                )
+                new_text = f"{MsgsText.WRONG_ANS.value}{text}"
+                await callback.message.edit_text(
+                    text=new_text, reply_markup=builder.as_markup()
+                )
+                await callback.answer()
