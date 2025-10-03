@@ -42,6 +42,11 @@ class MsgsText(Enum):
     )
 
 
+class Actions(Enum):
+    NEW = "new"
+    REPEAT = "repeat"
+
+
 class AnswerRequest(StatesGroup):
     waiting_for_answer = State()
 
@@ -63,7 +68,7 @@ class LangBot:
         await self._set_commands()
         self._start_cmd_handler()
         self._handle_show_new_words()
-        self._handle_learn_new_words()
+        self._handle_test()
         self._handle_answer()
         self._handle_difficulty()
         await self._dp.start_polling(self._bot_obj)
@@ -109,6 +114,21 @@ class LangBot:
                 text=MsgsText.CHOOSE_DIFF.value, reply_markup=builder.as_markup()
             )
 
+    async def _answer_new_repeat(
+        self, callback: CallbackQuery, ans: str, action: str
+    ) -> None:
+        builder = InlineKeyboardBuilder()
+        builder.button(
+            text=ButtonsText.TEST.value,
+            callback_data=f"{ButtonsText.TEST.value}:{action}",
+        )
+        builder.adjust(1)
+        await callback.message.edit_text(
+            text=f"{MsgsText.SHOWED_WORDS.value}{ans}",
+            reply_markup=builder.as_markup(),
+        )
+        await callback.answer()
+
     def _handle_show_new_words(self) -> None:
         @self._dp.callback_query(
             F.data.in_([ButtonsText.BASE.value, ButtonsText.ADVANCED.value])
@@ -122,18 +142,18 @@ class LangBot:
                 else Constants.WORDS_FILE_PATH.value
             )
             words = choose_words(Constants.SHOW_COUNT.value, path)
-            await self._redis_service.add_user_words(chat_id, words)
+            await self._redis_service.add_words(chat_id, words)
             ans = self._redis_service.show_all_words(chat_id)
-            builder = InlineKeyboardBuilder()
-            builder.button(
-                text=ButtonsText.TEST.value, callback_data=ButtonsText.TEST.value
-            )
-            builder.adjust(1)
-            await callback.message.edit_text(
-                text=f"{MsgsText.SHOWED_WORDS.value}{ans}",
-                reply_markup=builder.as_markup(),
-            )
-            await callback.answer()
+            await self._answer_new_repeat(callback, ans, Actions.NEW.value)
+
+    def handle_show_repeat_words(self) -> None:
+        @self._dp.callback_query(F.data == ButtonsText.REPEAT.value)
+        async def handle(callback: CallbackQuery) -> None:
+            chat_id = callback.message.chat.id
+            words = await self._db_service.get_repeat_words(chat_id)
+            await self._redis_service.add_words(words, translate=False)
+            ans = self._redis_service.show_all_words(chat_id)
+            await self._answer_new_repeat(callback, ans, Actions.REPEAT.value)
 
     def _build_choice_inline_keyboard(
         self, variants: list[str]
@@ -150,19 +170,24 @@ class LangBot:
         self,
         chat_id: int,
         state: FSMContext,
+        action: str,
         word_tr: dict[str, str] = None,
         variants: list[str] | None = None,
-    ) -> tuple[str | InlineKeyboardBuilder]:
+    ) -> tuple[str | InlineKeyboardBuilder] | set[str]:
         if not word_tr:
             word_tr = self._redis_service.get_random_word(chat_id)
-            if not word_tr:
-                return
+            if isinstance(word_tr, set):
+                return word_tr
         word = list(word_tr.keys())[0]
         if not variants:
             variants = choose_words(Constants.VARIANTS_COUNT.value, base_word=word)
         if word not in variants:
             variants.append(word)
-        state_data = {"word_tr": word_tr, "variants": variants}
+        state_data = {
+            "word_tr": word_tr,
+            "variants": variants,
+            "action": action,
+        }
         await state.update_data(state_data)
         await state.set_state(AnswerRequest.waiting_for_answer)
         builder = self._build_choice_inline_keyboard(variants)
@@ -174,11 +199,12 @@ class LangBot:
         await callback.message.answer(text=text)
         await callback.answer()
 
-    def _handle_learn_new_words(self) -> None:
-        @self._dp.callback_query(F.data == ButtonsText.TEST.value)
+    def _handle_test(self) -> None:
+        @self._dp.callback_query(F.data.startswith(ButtonsText.TEST.value))
         async def handle(callback: CallbackQuery, state: FSMContext):
+            action = callback.data.split(":")[-1]
             text, builder = await self._generate_question(
-                callback.message.chat.id, state
+                callback.message.chat.id, state, action=action
             )
             await callback.message.edit_text(
                 text=text,
@@ -192,34 +218,63 @@ class LangBot:
             chat_id = callback.message.chat.id
             ans = callback.data
             state_data = await state.get_data()
-            word_tr, variants = (
+            word_tr, variants, action = (
                 state_data["word_tr"],
                 state_data["variants"],
+                state_data["action"],
             )
             await state.clear()
             correct_ans = list(word_tr.keys())[0]
             if ans == correct_ans:
-                if not await self._generate_question(chat_id, state):
-                    await self._finish_cycle(callback)
-                    return
-                else:
-                    self._redis_service.move_word(chat_id, word_tr)
-                    next_step = await self._generate_question(chat_id, state)
-                    if not next_step:
-                        await self._finish_cycle(callback)
-                        return
-                    text, builder = next_step
-                    new_text = f"{MsgsText.CORRECT_ANSWER.value}{text}"
-                    await callback.message.edit_text(
-                        text=new_text, reply_markup=builder.as_markup()
-                    )
-                    await callback.answer()
+                await self._process_correct_ans(
+                    callback, state, chat_id, word_tr, action
+                )
             else:
-                text, builder = await self._generate_question(
-                    chat_id, state, word_tr, variants
+                await self._process_wrong_ans(
+                    callback, state, chat_id, word_tr, variants
                 )
-                new_text = f"{MsgsText.WRONG_ANS.value}{text}"
-                await callback.message.edit_text(
-                    text=new_text, reply_markup=builder.as_markup()
-                )
-                await callback.answer()
+
+    async def _process_correct_ans(
+        self,
+        callback: CallbackQuery,
+        state: FSMContext,
+        chat_id: int,
+        word_tr: dict[str, str],
+        action: str,
+    ) -> None:
+        data = await self._generate_question(chat_id, state)
+        if isinstance(data, set):
+            if action == Actions.REPEAT.value:
+                await self._finish_cycle(callback)
+                return
+            else:
+                await self._finish_cycle(callback)
+                await self._db_service.save_user_words(chat_id, data)
+                return
+        else:
+            self._redis_service.move_word(chat_id, word_tr)
+            next_step = await self._generate_question(chat_id, state)
+            if not next_step:
+                await self._finish_cycle(callback)
+                return
+            text, builder = next_step
+            new_text = f"{MsgsText.CORRECT_ANSWER.value}{text}"
+            await callback.message.edit_text(
+                text=new_text, reply_markup=builder.as_markup()
+            )
+            await callback.answer()
+
+    async def _process_wrong_ans(
+        self,
+        callback: CallbackQuery,
+        state: FSMContext,
+        chat_id: int,
+        word_tr: dict[str, str],
+        variants: list[str],
+    ) -> None:
+        text, builder = await self._generate_question(chat_id, state, word_tr, variants)
+        new_text = f"{MsgsText.WRONG_ANS.value}{text}"
+        await callback.message.edit_text(
+            text=new_text, reply_markup=builder.as_markup()
+        )
+        await callback.answer()
