@@ -16,6 +16,7 @@ from src.services.redis_service import RedisService
 from enum import Enum
 
 from src.utils.choose_words import choose_words
+import random
 
 
 class ButtonsText(Enum):
@@ -31,13 +32,13 @@ class ButtonsText(Enum):
 class MsgsText(Enum):
     START = "Bienvenido amigo! Желаю хорошо провести время за изучением нового ☝"
     CHOOSE_DIFF = "Выберите уровень сложности слов 🎮"
-    SHOWED_WORDS = "Твои слова 👇 Как запомнишь - жми на кнопку 📝\n\n"
+    SHOWED_WORDS = "Ваши слова 👇 Как запомните - жмите на кнопку 📝\n\n"
     TRANSLATE = "❓ Переведите слово: "
     WRONG_ANS = "Неправильно 😔\n"
     CORRECT_ANSWER = "Правильно ✔️\n"
     FINISH_LEARNING = (
-        "Поздравляю! Вы выучили все новые слова, теперь они доступны для повторения. "
-        "Так же можно получить порцию новых слов 😎"
+        "Поздравляю! Вы выучили все новые слова и теперь они доступны для повторения. "
+        "Так же можно получить ещё порцию новых слов 😎"
     )
 
 
@@ -121,8 +122,8 @@ class LangBot:
                 else Constants.WORDS_FILE_PATH.value
             )
             words = choose_words(Constants.SHOW_COUNT.value, path)
-            await self._redis_service.set_user_words(chat_id, words)
-            ans = self._redis_service.show_all_words()
+            await self._redis_service.add_user_words(chat_id, words)
+            ans = self._redis_service.show_all_words(chat_id)
             builder = InlineKeyboardBuilder()
             builder.button(
                 text=ButtonsText.TEST.value, callback_data=ButtonsText.TEST.value
@@ -138,7 +139,9 @@ class LangBot:
         self, variants: list[str]
     ) -> InlineKeyboardBuilder:
         builder = InlineKeyboardBuilder()
-        for v in variants:
+        shuffled_variants = variants.copy()
+        random.shuffle(shuffled_variants)
+        for v in shuffled_variants:
             builder.button(text=v, callback_data=v)
         builder.adjust(1)
         return builder
@@ -147,20 +150,19 @@ class LangBot:
         self,
         chat_id: int,
         state: FSMContext,
-        word_data: tuple[dict[str, str] | str] | None = None,
+        word_tr: dict[str, str] = None,
         variants: list[str] | None = None,
     ) -> tuple[str | InlineKeyboardBuilder]:
-        if not word_data:
-            word_data = self._redis_service.show_word(chat_id)
-            if not word_data:
+        if not word_tr:
+            word_tr = self._redis_service.get_random_word(chat_id)
+            if not word_tr:
                 return
-        if not variants:
-            variants = choose_words(Constants.VARIANTS_COUNT.value)
-        word_tr, redis_key = word_data
         word = list(word_tr.keys())[0]
+        if not variants:
+            variants = choose_words(Constants.VARIANTS_COUNT.value, base_word=word)
         if word not in variants:
             variants.append(word)
-        state_data = {"word_tr": word_tr, "redis_key": redis_key, "variants": variants}
+        state_data = {"word_tr": word_tr, "variants": variants}
         await state.update_data(state_data)
         await state.set_state(AnswerRequest.waiting_for_answer)
         builder = self._build_choice_inline_keyboard(variants)
@@ -190,9 +192,8 @@ class LangBot:
             chat_id = callback.message.chat.id
             ans = callback.data
             state_data = await state.get_data()
-            word_tr, redis_key, variants = (
+            word_tr, variants = (
                 state_data["word_tr"],
-                state_data["redis_key"],
                 state_data["variants"],
             )
             await state.clear()
@@ -202,9 +203,7 @@ class LangBot:
                     await self._finish_cycle(callback)
                     return
                 else:
-                    self._redis_service.reduce_word_attempts_count(
-                        chat_id, word_tr, redis_key
-                    )
+                    self._redis_service.move_word(chat_id, word_tr)
                     next_step = await self._generate_question(chat_id, state)
                     if not next_step:
                         await self._finish_cycle(callback)
@@ -217,7 +216,7 @@ class LangBot:
                     await callback.answer()
             else:
                 text, builder = await self._generate_question(
-                    chat_id, state, (word_tr, redis_key), variants
+                    chat_id, state, word_tr, variants
                 )
                 new_text = f"{MsgsText.WRONG_ANS.value}{text}"
                 await callback.message.edit_text(
