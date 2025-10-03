@@ -1,9 +1,8 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import asyncpg
 
 from src.core.constansts import Constants
 import logging
-from src.utils.log_decorator import log_decorator
 
 logger = logging.getLogger(__name__)
 
@@ -41,14 +40,13 @@ class DbRepo:
                 """
             )
 
-    @log_decorator(logger)
     async def add_user_word(self, chat_id: int, word: str, translate: str) -> None:
+        user_id = await self._get_user_id(chat_id)
+        if not user_id:
+            user_id = await self._add_user(chat_id)
         async with self._pool.acquire() as conn:
-            user_id = await self._get_user_id(chat_id)
-            if not user_id:
-                user_id = self._add_user(chat_id)
             query = """
-                    INSERT INTO main_words (word, translation)
+                    INSERT INTO words (word, translation)
                     VALUES ($1, $2)
                     RETURNING id
                     """
@@ -59,34 +57,35 @@ class DbRepo:
                 INSERT INTO users_words (user_id, word_id)
                 VALUES ($1, $2)
                 """,
-                (user_id, word_id),
+                user_id,
+                word_id,
             )
+            logger.info(f"{self.add_user_word.__name__}:{word=}")
 
-    @log_decorator(logger)
     async def save_user_words(self, chat_id, words: list[dict[str, str]]) -> None:
+        user_id = await self._get_user_id(chat_id)
+        if not user_id:
+            user_id = await self._add_user(chat_id)
         async with self._pool.acquire() as conn:
-            user_id = self._get_user_id(chat_id)
-            if not user_id:
-                user_id = self._add_user(chat_id)
             values_sql = ", ".join(
                 f"(${i * 2 + 1}, ${i * 2 + 2})" for i in range(len(words))
             )
             query = f"""
-                    INSERT INTO main_words (word, translation)
+                    INSERT INTO words (word, translation)
                     VALUES {values_sql}
                     RETURNING id
                     """
             params = []
-            for w in words:
-                params.extend([w["word"], w["translation"]])
+            for w_tr in words:
+                params.extend([list(w_tr.keys())[0], list(w_tr.values())[0]])
             rows = await conn.fetch(query, *params)
             words_ids = [row["id"] for row in rows]
             await conn.executemany(
                 "INSERT INTO users_words (user_id, word_id) VALUES ($1, $2)",
                 [(user_id, w_id) for w_id in words_ids],
             )
+            logger.info(f"{self.save_user_words.__name__}, {words}=")
 
-    @log_decorator(logger)
     async def delete_user_word(self, word: str, chat_id: int) -> None:
         word_id = await self._get_word_id(word)
         user_id = await self._get_user_id(chat_id)
@@ -96,53 +95,59 @@ class DbRepo:
                 DELETE FROM users_words
                 WHERE word_id=$1 and user_id=$2
                 """,
-                (word_id, user_id),
+                word_id,
+                user_id,
             )
 
-    @log_decorator(logger)
-    async def get_repeat_words(self, chat_id: int) -> list[dict[str, str]]:
+    async def get_repeat_words(self, chat_id: int) -> list[dict[str, str]] | None:
         async with self._pool.acquire() as conn:
             ids = await self._get_repeat_words_ids(chat_id)
-            rows = conn.fetch(
-                """
-                SELECT word, translation from words
-                WHERE id = ANY($1::int[0])
-                """,
-                (ids,),
-            )
-            return {row["word"]: row["translation"] for row in rows}
+            if not ids:
+                return
+            query = """
+                    SELECT word, translation from words
+                    WHERE id = ANY($1::int[])
+                    """
+            rows = await conn.fetch(query, ids)
+            res = [{row["word"]: row["translation"]} for row in rows]
+            logger.info(f"{self.get_repeat_words.__name__}:{res=}")
+            return res
 
-    @log_decorator(logger)
-    async def _get_repeat_words_ids(self, chat_id: int) -> list[int]:
+    async def _get_repeat_words_ids(self, chat_id: int) -> list[int] | None:
+        user_id = await self._get_user_id(chat_id)
+        if not user_id:
+            user_id = await self._add_user(chat_id)
         async with self._pool.acquire() as conn:
             async with conn.transaction():
+                query = """                
+                        SELECT word_id
+                        FROM users_words
+                        WHERE user_id=$1
+                        ORDER BY last_seen ASC
+                        LIMIT $2
+                        FOR UPDATE
+                        """
                 rows = await conn.fetch(
-                    """                
-                    SELECT id, word_id
-                    FROM users_words
-                    WHERE chat_id=$1
-                    ORDER BY last_seen ASC
-                    LIMIT $2
-                    FOR UPDATE
-                    """,
-                    (chat_id, Constants.SHOW_COUNT.value),
+                    query,
+                    user_id,
+                    Constants.SHOW_COUNT.value,
                 )
                 if not rows:
                     return
-                ids = [row["id"] for row in rows]
+                ids = [row["word_id"] for row in rows]
                 await conn.execute(
                     """
                     UPDATE users_words
                     SET last_seen = $1
-                    WHERE id = ANY($2::int[])
+                    WHERE user_id = $2 AND word_id = ANY($3::int[])
                     """,
-                    (
-                        datetime.now(datetime.timezone.utc),
-                        ids,
-                    ),
+                    datetime.now(timezone.utc),
+                    user_id,
+                    ids,
                 )
-
-                return [row["word_id"] for row in rows]
+                res = [row["word_id"] for row in rows]
+                logger.info(f"{self._get_repeat_words_ids.__name__}: {res=}")
+                return res
 
     async def _get_user_id(self, chat_id: int) -> int | None:
         async with self._pool.acquire() as conn:
