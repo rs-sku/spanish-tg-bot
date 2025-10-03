@@ -1,7 +1,5 @@
 import redis
 import logging
-import json
-from uuid import uuid4
 from src.utils.log_decorator import log_decorator
 from src.core.constansts import Constants
 

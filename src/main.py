@@ -32,7 +32,7 @@ async def on_startup(db: Database) -> db_repo.DbRepo:
 
 async def on_shutdown(db: Database, bot: Bot) -> None:
     await db.close()
-    await bot.session.close() 
+    await bot.session.close()
     logger.info("Shutdown complete")
 
 

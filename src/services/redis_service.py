@@ -1,9 +1,7 @@
 import json
-import time
-from src.repositories.redis_repo import RedisRepo
 from src.core.constansts import Constants
+from src.repositories.redis_repo import RedisRepo
 from src.translator_client import TranslatorClient
-import random
 import logging
 from src.utils.log_decorator import log_decorator
 
@@ -15,21 +13,29 @@ class RedisService:
         self._repo = repo
         self._translator_client = translator_client
 
-    async def add_user_words(self, chat_id: int, words: list[str]) -> None:
+    @log_decorator(logger)
+    async def add_words(
+        self, chat_id: int, words: list[str], translate: bool = True
+    ) -> None:
         if self._repo.in_process(chat_id):
             return
         self._repo.set_in_process(chat_id)
         self._repo.delete_words(chat_id)
         words_to_set = []
-        for word in words:
-            translation = await self._translator_client.translate_one(word)
-            word_tr = json.dumps({word: translation})
-            words_to_set.append(word_tr)
+        if translate:
+            for word in words:
+                translation = await self._translator_client.translate_one(word)
+                word_tr = json.dumps({word: translation})
+                words_to_set.append(word_tr)
+        else:
+            words_to_set = words
         self._repo.add_words(chat_id, words_to_set)
 
     @log_decorator(logger)
     def show_all_words(self, chat_id: int) -> str:
         words = self._repo.get_all(chat_id)
+        if not words:
+            return Constants.INTERNAL_ERROR.value
         res = ""
         for word_tr in words:
             word_tr = json.loads(word_tr)
@@ -37,14 +43,14 @@ class RedisService:
         self._repo.remove_in_process(chat_id)
         return res
 
-    def get_random_word(self, chat_id: int) -> dict[str, str]:
+    def get_random_word(self, chat_id: int) -> dict[str, str] | set[str]:
         word = self._repo.get_random_word(chat_id)
         if not word:
             count = self._repo.reduce_attempts_count(chat_id)
             if count == 0:
                 res = self._repo.get_all(chat_id)
                 self._repo.delete_words(chat_id)
-                return  # возвращать res потом
+                return res
             word = self._repo.get_random_word(chat_id)
         return json.loads(word)
 
