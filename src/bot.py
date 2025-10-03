@@ -40,6 +40,7 @@ class MsgsText(Enum):
         "Поздравляю! Вы выучили все новые слова и теперь они доступны для повторения. "
         "Так же можно получить ещё порцию новых слов 😎"
     )
+    FINISH_REPEAT = "Поздравляю! Вы успешно закрепили знания 😎"
     NO_REPEAT = "У вас ещё нет сохранённых слов, начните с новых 📜"
 
 
@@ -157,7 +158,7 @@ class LangBot:
                 return
             await self._redis_service.add_words(chat_id, words, translate=False)
             ans = self._redis_service.show_all_words(chat_id)
-            builder = self._build_test_inline_keyboard(Actions.NEW.value)
+            builder = self._build_test_inline_keyboard(Actions.REPEAT.value)
             await msg.answer(
                 text=f"{MsgsText.SHOWED_WORDS.value}{ans}",
                 reply_markup=builder.as_markup(),
@@ -203,8 +204,7 @@ class LangBot:
         text = f"{MsgsText.TRANSLATE.value}{list(word_tr.values())[0]}"
         return text, builder
 
-    async def _finish_cycle(self, callback: CallbackQuery) -> None:
-        text = MsgsText.FINISH_LEARNING.value
+    async def _finish_cycle(self, callback: CallbackQuery, text: str) -> None:
         await callback.message.answer(text=text)
         await callback.answer()
 
@@ -251,26 +251,15 @@ class LangBot:
         word_tr: dict[str, str],
         action: str,
     ) -> None:
-        # data = await self._generate_question(chat_id, state, action)
-        # print(action, type(data))
-        # if isinstance(data, set):
-        #     if action == Actions.REPEAT.value:
-        #         await self._finish_cycle(callback)
-        #         return
-        #     else:
-        #         await self._db_service.save_user_words(chat_id, data)
-        #         await self._finish_cycle(callback)
-        #         return
-        # else:
         self._redis_service.move_word(chat_id, word_tr)
         data = await self._generate_question(chat_id, state, action)
         if isinstance(data, set):
             if action == Actions.REPEAT.value:
-                await self._finish_cycle(callback)
+                await self._finish_cycle(callback, MsgsText.FINISH_REPEAT.value)
                 return
             else:
                 await self._db_service.save_user_words(chat_id, data)
-                await self._finish_cycle(callback)
+                await self._finish_cycle(callback, MsgsText.FINISH_LEARNING.value)
                 return
         else:
             text, builder = data
