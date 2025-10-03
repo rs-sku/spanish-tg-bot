@@ -17,15 +17,17 @@ class DbRepo:
                 """
                 CREATE TABLE IF NOT EXISTS users(
                 id SERIAL PRIMARY KEY,
-                chat_id BIGINT NOT NULL);                            
+                chat_id BIGINT NOT NULL UNIQUE
+                );                            
                 """
             )
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS words(
                 id SERIAL PRIMARY KEY,
-                word VARCHAR(64) NOT NULL,
-                translation VARCHAR(64) NOT NULL);
+                word VARCHAR(64) NOT NULL UNIQUE,
+                translation VARCHAR(64) NOT NULL
+                );
                 """
             )
             await conn.execute(
@@ -73,6 +75,7 @@ class DbRepo:
             query = f"""
                     INSERT INTO words (word, translation)
                     VALUES {values_sql}
+                    ON CONFLICT (word) DO NOTHING
                     RETURNING id
                     """
             params = []
