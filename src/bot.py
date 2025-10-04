@@ -15,7 +15,7 @@ from src.services.db_service import DbService
 from src.services.redis_service import RedisService
 from enum import Enum
 
-from src.utils.choose_words import choose_words
+from src.utils.words_data_logic import choose_words
 import random
 
 
