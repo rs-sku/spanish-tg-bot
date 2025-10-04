@@ -1,49 +1,33 @@
 import json
 from src.core.constansts import Constants
 from src.repositories.redis_repo import RedisRepo
-from src.translator_client import TranslatorClient
+from src.interfaces.i_redis_service import RedisServiceInterface
 import logging
 from src.utils.log_decorator import sync_log_decorator
 
 logger = logging.getLogger(__name__)
 
 
-class RedisService:
-    def __init__(self, repo: RedisRepo, translator_client: TranslatorClient):
+class RedisService(RedisServiceInterface):
+    def __init__(self, repo: RedisRepo):
         self._repo = repo
-        self._translator_client = translator_client
 
     @sync_log_decorator(logger)
-    async def add_words(
-        self, chat_id: int, words: list[str], translate: bool = True
-    ) -> None:
+    async def add_words(self, chat_id: int, words: list[str]) -> None:
         if self._repo.in_process(chat_id):
             return
         self._repo.set_in_process(chat_id)
         self._repo.delete_words(chat_id)
-        words_to_set = []
-        if translate:
-            for word in words:
-                translation = await self._translator_client.translate_one(word)
-                word_tr = json.dumps({word: translation})
-                words_to_set.append(word_tr)
-        else:
-            words_to_set = words
-        self._repo.add_words(chat_id, words_to_set)
-
-    @sync_log_decorator(logger)
-    def show_all_words(self, chat_id: int) -> str:
-        words = self._repo.get_all(chat_id)
-        if not words:
-            return Constants.INTERNAL_ERROR.value
-        res = ""
-        for word_tr in words:
-            word_tr = json.loads(word_tr)
-            res += f"{list(word_tr.keys())[0]} - {list(word_tr.values())[0]}\n"
+        self._repo.add_words(chat_id, words)
         self._repo.remove_in_process(chat_id)
-        return res
 
-    def get_random_word(self, chat_id: int) -> dict[str, str] | set[str]:
+    # @sync_log_decorator(logger)
+    # def get_all_words(self, chat_id: int) -> str:
+    #     words = self._repo.get_all(chat_id)
+    #     self._repo.remove_in_process(chat_id)
+    #     return words
+
+    def get_random_word(self, chat_id: int) -> str | set[str]:
         word = self._repo.get_random_word(chat_id)
         if not word:
             count = self._repo.reduce_attempts_count(chat_id)
@@ -52,7 +36,7 @@ class RedisService:
                 self._repo.delete_words(chat_id)
                 return res
             word = self._repo.get_random_word(chat_id)
-        return json.loads(word)
+        return word
 
-    def move_word(self, chat_id: int, word_tr: dict[str, str]) -> None:
-        self._repo.move_word(chat_id, json.dumps(word_tr))
+    def move_word(self, chat_id: int, word_tr: str) -> None:
+        self._repo.move_word(chat_id, word_tr)
