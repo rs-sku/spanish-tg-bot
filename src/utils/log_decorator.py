@@ -1,7 +1,7 @@
 from functools import wraps
 
 
-def log_decorator(module_logger):
+def sync_log_decorator(module_logger):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):

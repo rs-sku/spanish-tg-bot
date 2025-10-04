@@ -3,7 +3,7 @@ from src.core.constansts import Constants
 from src.repositories.redis_repo import RedisRepo
 from src.translator_client import TranslatorClient
 import logging
-from src.utils.log_decorator import log_decorator
+from src.utils.log_decorator import sync_log_decorator
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +13,7 @@ class RedisService:
         self._repo = repo
         self._translator_client = translator_client
 
-    @log_decorator(logger)
+    @sync_log_decorator(logger)
     async def add_words(
         self, chat_id: int, words: list[str], translate: bool = True
     ) -> None:
@@ -31,7 +31,7 @@ class RedisService:
             words_to_set = words
         self._repo.add_words(chat_id, words_to_set)
 
-    @log_decorator(logger)
+    @sync_log_decorator(logger)
     def show_all_words(self, chat_id: int) -> str:
         words = self._repo.get_all(chat_id)
         if not words:
