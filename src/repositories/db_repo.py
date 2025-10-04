@@ -4,6 +4,8 @@ import asyncpg
 from src.core.constansts import Constants
 import logging
 
+from src.utils.log_decorator import async_log_decorator
+
 logger = logging.getLogger(__name__)
 
 
@@ -26,7 +28,8 @@ class DbRepo:
                 CREATE TABLE IF NOT EXISTS words(
                 id SERIAL PRIMARY KEY,
                 word VARCHAR(64) NOT NULL UNIQUE,
-                translation VARCHAR(64) NOT NULL
+                translation VARCHAR(64) NOT NULL,
+                is_base BOOLEAN NOT NULL
                 );
                 """
             )
@@ -42,18 +45,36 @@ class DbRepo:
                 """
             )
 
-    async def add_user_word(self, chat_id: int, word: str, translate: str) -> None:
+    @async_log_decorator(logger)
+    async def add_all_words(self, words: list[dict[str, str | bool]]) -> None:
+        async with self._pool.acquire() as conn:
+            if not words:
+                return
+            values_sql = ", ".join(
+                f"(${i * 3 + 1}, ${i * 3 + 2}, ${i * 3 + 3})" for i in range(len(words))
+            )
+            query = f"""
+                    INSERT INTO words (word, translation, is_base)
+                    VALUES {values_sql}
+                    ON CONFLICT (word) DO NOTHING
+                    """
+            params = []
+            for w in words:
+                params.extend([w["word"], w["translation"], w["is_base"]])
+            await conn.execute(query, *params)
+
+    async def count_words(self) -> int:
+        async with self._pool.acquire() as conn:
+            return await conn.fetchval("SELECT COUNT(*) FROM words")
+
+    @async_log_decorator(logger)
+    async def add_user_word(self, chat_id: int, word: str) -> None:
         user_id = await self._get_user_id(chat_id)
         if not user_id:
             user_id = await self._add_user(chat_id)
-        async with self._pool.acquire() as conn:
-            query = """
-                    INSERT INTO words (word, translation)
-                    VALUES ($1, $2)
-                    RETURNING id
-                    """
-            word_id = await conn.fetchval(query, word, translate)
 
+        async with self._pool.acquire() as conn:
+            word_id = await self._get_word_id(word)
             await conn.execute(
                 """
                 INSERT INTO users_words (user_id, word_id)
@@ -62,33 +83,46 @@ class DbRepo:
                 user_id,
                 word_id,
             )
-            logger.info(f"{self.add_user_word.__name__}:{word=}")
 
-    async def save_user_words(self, chat_id, words: list[dict[str, str]]) -> None:
+    @async_log_decorator(logger)
+    async def get_random_words(
+        self, chat_id: int, is_base: bool, limit: int
+    ) -> list[asyncpg.Record]:
         user_id = await self._get_user_id(chat_id)
         if not user_id:
             user_id = await self._add_user(chat_id)
         async with self._pool.acquire() as conn:
-            values_sql = ", ".join(
-                f"(${i * 2 + 1}, ${i * 2 + 2})" for i in range(len(words))
-            )
-            query = f"""
-                    INSERT INTO words (word, translation)
-                    VALUES {values_sql}
-                    ON CONFLICT (word) DO NOTHING
-                    RETURNING id
+            query = """
+                    SELECT w.id, w.word, w.translation
+                    FROM words w
+                    LEFT JOIN users_words uw 
+                        ON w.id = uw.word_id AND uw.user_id = $1
+                    WHERE uw.word_id IS NULL
+                    AND w.is_base = $2
+                    ORDER BY RANDOM()
+                    LIMIT $3
                     """
-            params = []
-            for w_tr in words:
-                params.extend([list(w_tr.keys())[0], list(w_tr.values())[0]])
-            rows = await conn.fetch(query, *params)
-            words_ids = [row["id"] for row in rows]
+            rows = await conn.fetch(
+                query,
+                user_id,
+                is_base,
+                limit,
+            )
+            return rows
+
+    @async_log_decorator(logger)
+    async def add_user_words(self, chat_id, words: list[str]) -> None:
+        user_id = await self._get_user_id(chat_id)
+        if not user_id:
+            user_id = await self._add_user(chat_id)
+        async with self._pool.acquire() as conn:
+            words_ids = [await self._get_word_id(word) for word in words]
             await conn.executemany(
                 "INSERT INTO users_words (user_id, word_id) VALUES ($1, $2)",
                 [(user_id, w_id) for w_id in words_ids],
             )
-            logger.info(f"{self.save_user_words.__name__}, {words}=")
 
+    @async_log_decorator(logger)
     async def delete_user_word(self, word: str, chat_id: int) -> None:
         word_id = await self._get_word_id(word)
         user_id = await self._get_user_id(chat_id)
@@ -102,7 +136,8 @@ class DbRepo:
                 user_id,
             )
 
-    async def get_repeat_words(self, chat_id: int) -> list[dict[str, str]] | None:
+    @async_log_decorator(logger)
+    async def get_repeat_words(self, chat_id: int) -> list[asyncpg.Record] | None:
         async with self._pool.acquire() as conn:
             ids = await self._get_repeat_words_ids(chat_id)
             if not ids:
@@ -112,9 +147,7 @@ class DbRepo:
                     WHERE id = ANY($1::int[])
                     """
             rows = await conn.fetch(query, ids)
-            res = [{row["word"]: row["translation"]} for row in rows]
-            logger.info(f"{self.get_repeat_words.__name__}:{res=}")
-            return res
+            return rows
 
     async def _get_repeat_words_ids(self, chat_id: int) -> list[int] | None:
         user_id = await self._get_user_id(chat_id)
@@ -148,9 +181,7 @@ class DbRepo:
                     user_id,
                     ids,
                 )
-                res = [row["word_id"] for row in rows]
-                logger.info(f"{self._get_repeat_words_ids.__name__}: {res=}")
-                return res
+                return [row["word_id"] for row in rows]
 
     async def _get_user_id(self, chat_id: int) -> int | None:
         async with self._pool.acquire() as conn:

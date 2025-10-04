@@ -5,12 +5,14 @@ from googletrans import Translator
 from redis import Redis
 from src.core.db import Database
 from src.repositories import redis_repo, db_repo
-from src.services import redis_service, db_service
+from src.services import redis_service, db_service, seed_service
 from src.core.settings import Settings
 from aiogram import Bot, Dispatcher
 from bot import LangBot
 from src import translator_client
 from aiogram.fsm.storage.memory import MemoryStorage
+
+from src.services.coordinator import Coordinator
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +27,8 @@ async def on_startup(db: Database) -> db_repo.DbRepo:
         port=Settings.POSTGRES_PORT,
     )
     repo = db_repo.DbRepo(db.pool)
-    await repo.create_tables()
-    logger.info("DB initialized")
+    seed = seed_service.SeedService(repo)
+    await seed.init()
     return repo
 
 
@@ -45,12 +47,13 @@ async def main() -> None:
         db_serv = db_service.DbService(db_rep)
         redis = Redis(Settings.REDIS_HOST, Settings.REDIS_PORT, decode_responses=True)
         redis_rep = redis_repo.RedisRepo(redis)
+        redis_serv = redis_service.RedisService(redis_rep)
         translator = Translator()
         tr_client = translator_client.TranslatorClient(translator)
-        redis_serv = redis_service.RedisService(redis_rep, tr_client)
+        coordinator = Coordinator(redis_serv, db_serv, tr_client)
         bot_obj = Bot(Settings.BOT_TOKEN)
         dp = Dispatcher(storage=MemoryStorage())
-        bot = LangBot(dp, bot_obj, db_serv, redis_serv)
+        bot = LangBot(dp, bot_obj, coordinator)
         await bot.start()
     finally:
         await on_shutdown(db, bot_obj)

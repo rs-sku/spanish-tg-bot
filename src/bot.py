@@ -10,12 +10,9 @@ from aiogram.types import (
 )
 from aiogram.types.callback_query import CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from src.core.constansts import Constants
-from src.services.db_service import DbService
-from src.services.redis_service import RedisService
+from src.services.coordinator import Coordinator
 from enum import Enum
 
-from src.utils.words_data_logic import choose_words
 import random
 
 
@@ -54,17 +51,10 @@ class AnswerRequest(StatesGroup):
 
 
 class LangBot:
-    def __init__(
-        self,
-        dp: Dispatcher,
-        bot_obj: Bot,
-        db_service: DbService,
-        redis_service: RedisService,
-    ) -> None:
+    def __init__(self, dp: Dispatcher, bot_obj: Bot, coordinator: Coordinator) -> None:
         self._dp = dp
         self._bot_obj = bot_obj
-        self._db_service = db_service
-        self._redis_service = redis_service
+        self._coordinator = coordinator
 
     async def start(self) -> None:
         await self._set_commands()
@@ -133,14 +123,8 @@ class LangBot:
         async def handle(callback: CallbackQuery) -> None:
             chat_id = callback.message.chat.id
             diff = callback.data
-            path = (
-                Constants.BASE_WORDS_FILE_PATH.value
-                if diff == ButtonsText.BASE.value
-                else Constants.WORDS_FILE_PATH.value
-            )
-            words = choose_words(Constants.SHOW_COUNT.value, path)
-            await self._redis_service.add_words(chat_id, words)
-            ans = self._redis_service.show_all_words(chat_id)
+            is_base = True if diff == ButtonsText.BASE.value else False
+            ans = await self._coordinator.show_words(chat_id, False, is_base)
             builder = self._build_test_inline_keyboard(Actions.NEW.value)
             await callback.message.edit_text(
                 text=f"{MsgsText.SHOWED_WORDS.value}{ans}",
@@ -152,12 +136,11 @@ class LangBot:
         @self._dp.message(F.text == ButtonsText.REPEAT.value)
         async def handle(msg: Message) -> None:
             chat_id = msg.chat.id
-            words = await self._db_service.get_repeat_words(chat_id)
-            if not words:
-                await msg.answer(text=MsgsText.NO_REPEAT.value)
+            ans = await self._coordinator.show_words(chat_id, True)
+            if not ans:
+                ans = MsgsText.NO_REPEAT.value
+                await msg.answer(text=ans)
                 return
-            await self._redis_service.add_words(chat_id, words, translate=False)
-            ans = self._redis_service.show_all_words(chat_id)
             builder = self._build_test_inline_keyboard(Actions.REPEAT.value)
             await msg.answer(
                 text=f"{MsgsText.SHOWED_WORDS.value}{ans}",
@@ -182,15 +165,19 @@ class LangBot:
         action: str,
         word_tr: dict[str, str] = None,
         variants: list[str] | None = None,
-    ) -> tuple[str | InlineKeyboardBuilder] | set[str]:
+    ) -> tuple[str | InlineKeyboardBuilder] | None:
         if not word_tr:
-            word_tr = self._redis_service.get_random_word(chat_id)
-            if isinstance(word_tr, set):
-                print(word_tr)
-                return word_tr
+            if action == Actions.NEW.value:
+                word_tr = await self._coordinator.get_random_word_or_save(chat_id, True)
+            else:
+                word_tr = await self._coordinator.get_random_word_or_save(chat_id)
+            if not word_tr:
+                return
         word = list(word_tr.keys())[0]
         if not variants:
-            variants = choose_words(Constants.VARIANTS_COUNT.value, base_word=word)
+            variants = await self._coordinator.get_random_variants(chat_id)
+            while word in variants:
+                variants = await self._coordinator.get_random_variants(chat_id)
         if word not in variants:
             variants.append(word)
         state_data = {
@@ -251,18 +238,13 @@ class LangBot:
         word_tr: dict[str, str],
         action: str,
     ) -> None:
-        self._redis_service.move_word(chat_id, word_tr)
-        data = await self._generate_question(chat_id, state, action)
-        if isinstance(data, set):
-            if action == Actions.REPEAT.value:
-                await self._finish_cycle(callback, MsgsText.FINISH_REPEAT.value)
-                return
-            else:
-                await self._db_service.save_user_words(chat_id, data)
-                await self._finish_cycle(callback, MsgsText.FINISH_LEARNING.value)
-                return
+        self._coordinator.move_word(chat_id, word_tr)
+        next_step = await self._generate_question(chat_id, state, action)
+        if not next_step:
+            await self._finish_cycle(callback, MsgsText.FINISH_REPEAT.value)
+            return
         else:
-            text, builder = data
+            text, builder = next_step
             new_text = f"{MsgsText.CORRECT_ANSWER.value}{text}"
             await callback.message.edit_text(
                 text=new_text, reply_markup=builder.as_markup()

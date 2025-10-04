@@ -14,14 +14,6 @@ services:
     ports:
       - "6379:6379"
   
-  # ollama:
-  #   image: ollama/ollama
-  #   ports:
-  #     - '11434:11434'
-  #   volumes:
-  #     - ./volumes/ollama:/root/.ollama
-
-
 networks:
   default:
     name: service_netwok
