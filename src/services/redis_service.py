@@ -1,5 +1,3 @@
-import json
-from src.core.constansts import Constants
 from src.repositories.redis_repo import RedisRepo
 from src.interfaces.i_redis_service import RedisServiceInterface
 import logging
@@ -20,12 +18,6 @@ class RedisService(RedisServiceInterface):
         self._repo.delete_words(chat_id)
         self._repo.add_words(chat_id, words)
         self._repo.remove_in_process(chat_id)
-
-    # @sync_log_decorator(logger)
-    # def get_all_words(self, chat_id: int) -> str:
-    #     words = self._repo.get_all(chat_id)
-    #     self._repo.remove_in_process(chat_id)
-    #     return words
 
     def get_random_word(self, chat_id: int) -> str | set[str]:
         word = self._repo.get_random_word(chat_id)
