@@ -1,4 +1,3 @@
-import json
 from src.core.constansts import Constants
 from src.repositories.db_repo import DbRepo
 from src.interfaces.i_db_service import DbServiceInterface

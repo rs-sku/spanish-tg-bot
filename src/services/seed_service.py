@@ -19,7 +19,9 @@ class SeedService:
         with open(Constants.WORDS_FILE_PATH.value, "r", encoding="utf-8") as f:
             words = f.readlines()
         words_table_size = await self._repo.count_words()
-        if words_table_size and (words_table_size > Constants.MIN_WORDS_TABLE_SIZE.value):
+        if words_table_size and (
+            words_table_size > Constants.MIN_WORDS_TABLE_SIZE.value
+        ):
             logger.info("Data already exists")
             return
         res = []
