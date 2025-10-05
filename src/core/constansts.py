@@ -4,7 +4,8 @@ from enum import Enum
 class Constants(Enum):
     BASE_WORDS_FILE_PATH = "src/data/base_words.txt"
     WORDS_FILE_PATH = "src/data/words.txt"
-    DEST = "russian"
+    RUSSIAN_DEST = "russian"
+    SPANISH_DEST = "spanish"
     ATTEMPTS_COUNT = 1
     SHOW_COUNT = 5
     VARIANTS_COUNT = 3
