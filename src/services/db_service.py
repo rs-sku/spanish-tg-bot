@@ -29,3 +29,15 @@ class DbService(DbServiceInterface):
             chat_id, is_base, Constants.SHOW_COUNT.value
         )
         return [{row["word"]: row["translation"]} for row in rows]
+
+    async def add_user_word(self, chat_id: int, word: str, translation: str) -> bool:
+        return await self._repo.add_user_word(chat_id, word, translation)
+
+    async def delete_user_word(self, chat_id: int, translation: str) -> bool:
+        rows = await self._repo.get_by_translation(chat_id, translation)
+        if not rows:
+            return False
+        for row in rows:
+            if not await self._repo.delete_user_word(chat_id, row["word"]):
+                return False
+        return True

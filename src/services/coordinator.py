@@ -55,8 +55,26 @@ class Coordinator:
                 return
         else:
             words = await self._db_service.get_random_words(chat_id, is_base)
-        if not words:
-            return Constants.INTERNAL_ERROR.value
         data = [json.dumps(word_tr) for word_tr in words]
         await self._redis_service.add_words(chat_id, data)
         return words
+
+    async def add_user_word(self, chat_id: int, rus_word: str) -> str | None:
+        spanish_word = await self._translator.translate_one(
+            rus_word, Constants.SPANISH_DEST.value
+        )
+        rus_word, spanish_word = rus_word.capitalize(), spanish_word.capitalize()
+        if rus_word == spanish_word:
+            raise ValueError
+        if not await self._db_service.add_user_word(chat_id, spanish_word, rus_word):
+            return
+        return f"'{rus_word} - {spanish_word}'"
+
+    async def delete_user_word(self, chat_id: int, rus_word: str) -> str | None:
+        rus_word = rus_word.capitalize()
+        if not await self._db_service.delete_user_word(chat_id, rus_word):
+            return
+        return f"'{rus_word}'"
+
+    def validate_input_word(self, word: str) -> bool:
+        return word.isalpha()

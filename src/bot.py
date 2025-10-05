@@ -17,8 +17,8 @@ import random
 
 
 class ButtonsText(Enum):
-    ADD_WORD = "Добавить слово ➕"
-    DELETE_WORD = "Удалить слово ➖"
+    ADD_WORD = "Добавить слово для повторения ➕"
+    DELETE_WORD = "Удалить слово из повторяемых ➖"
     TEST = "Тест 📝"
     NEW_WORDS = "Новые слова 📜"
     REPEAT = "Повторение 🔁"
@@ -39,6 +39,14 @@ class MsgsText(Enum):
     )
     FINISH_REPEAT = "Поздравляю! Вы успешно закрепили знания 😎"
     NO_REPEAT = "У вас ещё нет сохранённых слов, начните с новых 📜"
+    WRONG_WORD_INPUT = "Неверный формат ввода 🤔"
+    CAN_NOT_DELETE = "В коллекции для повторения нет такого слова, нажмите снова 🙄"
+    WORD_ADDED = " добавлено в коллекцию для повторения"
+    WORD_DELETED = " успешно удалено 👌"
+    ALREADY_HAS_WORD = "В коллекции для повторения уже есть данное слово, нажмите снова"
+    TYPE_WORD_TO_ADD = "Введите русский вариант слова"
+    TYPE_WORD_TO_DELETE = "Введите русский вариант слова из коллекции для повторения"
+    IS_SPANISH = "Это испанское слово, нажмите снова 😅"
 
 
 class Actions(Enum):
@@ -48,6 +56,14 @@ class Actions(Enum):
 
 class AnswerRequest(StatesGroup):
     waiting_for_answer = State()
+
+
+class AddWordRequest(StatesGroup):
+    waiting_for_word = State()
+
+
+class DeleteWordRequest(StatesGroup):
+    waiting_for_word = State()
 
 
 class LangBot:
@@ -64,6 +80,10 @@ class LangBot:
         self._handle_test()
         self._handle_answer()
         self._handle_difficulty()
+        self._handle_add_request()
+        self._handle_del_request()
+        self._handle_add_word()
+        self._handle_delete_word()
         await self._dp.start_polling(self._bot_obj)
 
     def _start_cmd_handler(self) -> None:
@@ -85,6 +105,9 @@ class LangBot:
                 ],
                 [
                     KeyboardButton(text=ButtonsText.ADD_WORD.value),
+                ],
+                [
+                    KeyboardButton(text=ButtonsText.DELETE_WORD.value),
                 ],
             ],
             resize_keyboard=True,
@@ -241,7 +264,12 @@ class LangBot:
         self._coordinator.move_word(chat_id, word_tr)
         next_step = await self._generate_question(chat_id, state, action)
         if not next_step:
-            await self._finish_cycle(callback, MsgsText.FINISH_REPEAT.value)
+            ans = (
+                MsgsText.FINISH_LEARNING.value
+                if action == Actions.NEW.value
+                else MsgsText.FINISH_REPEAT.value
+            )
+            await self._finish_cycle(callback, ans)
             return
         else:
             text, builder = next_step
@@ -268,3 +296,53 @@ class LangBot:
             text=new_text, reply_markup=builder.as_markup()
         )
         await callback.answer()
+
+    def _handle_add_request(self) -> None:
+        @self._dp.message(F.text == ButtonsText.ADD_WORD.value)
+        async def handle(msg: Message, state: FSMContext) -> None:
+            await state.set_state(AddWordRequest.waiting_for_word)
+            await msg.answer(text=MsgsText.TYPE_WORD_TO_ADD.value)
+
+    def _handle_del_request(self) -> None:
+        @self._dp.message(F.text == ButtonsText.DELETE_WORD.value)
+        async def handle(msg: Message, state: FSMContext) -> None:
+            await state.set_state(DeleteWordRequest.waiting_for_word)
+            await msg.answer(text=MsgsText.TYPE_WORD_TO_DELETE.value)
+
+    def _handle_add_word(self) -> None:
+        @self._dp.message(AddWordRequest.waiting_for_word)
+        async def handle(msg: Message, state: FSMContext) -> None:
+            chat_id = msg.chat.id
+            word = msg.text
+            if not self._coordinator.validate_input_word(word):
+                await msg.answer(text=MsgsText.WRONG_WORD_INPUT.value)
+                return
+            try:
+                res = await self._coordinator.add_user_word(chat_id, word)
+            except ValueError:
+                await msg.answer(text=MsgsText.IS_SPANISH.value)
+                return
+            ans = (
+                f"{res}{MsgsText.WORD_ADDED.value}"
+                if res
+                else MsgsText.ALREADY_HAS_WORD.value
+            )
+            await state.clear()
+            await msg.answer(text=ans)
+
+    def _handle_delete_word(self) -> None:
+        @self._dp.message(DeleteWordRequest.waiting_for_word)
+        async def handle(msg: Message, state) -> None:
+            chat_id = msg.chat.id
+            word = msg.text
+            if not self._coordinator.validate_input_word(word):
+                await msg.answer(text=MsgsText.WRONG_WORD_INPUT.value)
+                return
+            res = await self._coordinator.delete_user_word(chat_id, word)
+            ans = (
+                f"{res}{MsgsText.WORD_DELETED.value}"
+                if res
+                else MsgsText.CAN_NOT_DELETE.value
+            )
+            await state.clear()
+            await msg.answer(text=ans)

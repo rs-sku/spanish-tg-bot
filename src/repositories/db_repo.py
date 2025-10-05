@@ -45,7 +45,6 @@ class DbRepo:
                 """
             )
 
-    @async_log_decorator(logger)
     async def add_all_words(self, words: list[dict[str, str | bool]]) -> None:
         async with self._pool.acquire() as conn:
             if not words:
@@ -68,29 +67,30 @@ class DbRepo:
             return await conn.fetchval("SELECT COUNT(*) FROM words")
 
     @async_log_decorator(logger)
-    async def add_user_word(self, chat_id: int, word: str) -> None:
+    async def add_user_word(self, chat_id: int, word: str, translation: str) -> bool:
         user_id = await self._get_user_id(chat_id)
-        if not user_id:
-            user_id = await self._add_user(chat_id)
-
+        if await self._check_word_exists(chat_id, word):
+            return False
+        word_id = await self._get_word_id(word)
+        if not word_id:
+            word_id = await self._add_word(word, translation)
         async with self._pool.acquire() as conn:
-            word_id = await self._get_word_id(word)
             await conn.execute(
                 """
                 INSERT INTO users_words (user_id, word_id)
                 VALUES ($1, $2)
+                ON CONFLICT (user_id, word_id) DO NOTHING
                 """,
                 user_id,
                 word_id,
             )
+            return True
 
     @async_log_decorator(logger)
     async def get_random_words(
         self, chat_id: int, is_base: bool, limit: int
     ) -> list[asyncpg.Record]:
         user_id = await self._get_user_id(chat_id)
-        if not user_id:
-            user_id = await self._add_user(chat_id)
         async with self._pool.acquire() as conn:
             query = """
                     SELECT w.id, w.word, w.translation
@@ -113,19 +113,24 @@ class DbRepo:
     @async_log_decorator(logger)
     async def add_user_words(self, chat_id, words: list[str]) -> None:
         user_id = await self._get_user_id(chat_id)
-        if not user_id:
-            user_id = await self._add_user(chat_id)
         async with self._pool.acquire() as conn:
             words_ids = [await self._get_word_id(word) for word in words]
             await conn.executemany(
-                "INSERT INTO users_words (user_id, word_id) VALUES ($1, $2)",
+                """
+                INSERT INTO users_words (user_id, word_id) 
+                VALUES ($1, $2)
+                ON CONFLICT (user_id, word_id) DO NOTHING
+                """,
                 [(user_id, w_id) for w_id in words_ids],
             )
 
     @async_log_decorator(logger)
-    async def delete_user_word(self, word: str, chat_id: int) -> None:
+    async def delete_user_word(self, chat_id: int, word: str) -> bool:
         word_id = await self._get_word_id(word)
         user_id = await self._get_user_id(chat_id)
+        word_exists = await self._check_word_exists(chat_id, word)
+        if not word_exists:
+            return False
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """
@@ -135,6 +140,7 @@ class DbRepo:
                 word_id,
                 user_id,
             )
+            return True
 
     @async_log_decorator(logger)
     async def get_repeat_words(self, chat_id: int) -> list[asyncpg.Record] | None:
@@ -149,10 +155,36 @@ class DbRepo:
             rows = await conn.fetch(query, ids)
             return rows
 
+    @async_log_decorator(logger)
+    async def get_by_translation(self, chat_id, translation: str) -> list[asyncpg.Record]:
+        user_id = await self._get_user_id(chat_id)
+        async with self._pool.acquire() as conn:
+            query = """
+                    SELECT w.word
+                    FROM words w
+                    JOIN users_words uw
+                        ON w.id = uw.word_id
+                    WHERE w.translation = $1 and uw.user_id = $2
+                    """
+            return await conn.fetch(query, translation, user_id)
+
+    @async_log_decorator(logger)
+    async def _add_word(self, word: str, translation: str) -> int:
+        async with self._pool.acquire() as conn:
+            query = """
+                    INSERT INTO words (word, translation, is_base)
+                    VALUES ($1, $2, $3)
+                    RETURNING id
+                    """
+            return await conn.fetchval(
+                query,
+                word,
+                translation,
+                False,
+            )
+
     async def _get_repeat_words_ids(self, chat_id: int) -> list[int] | None:
         user_id = await self._get_user_id(chat_id)
-        if not user_id:
-            user_id = await self._add_user(chat_id)
         async with self._pool.acquire() as conn:
             async with conn.transaction():
                 query = """                
@@ -183,15 +215,16 @@ class DbRepo:
                 )
                 return [row["word_id"] for row in rows]
 
-    async def _get_user_id(self, chat_id: int) -> int | None:
+    async def _get_user_id(self, chat_id: int) -> int:
         async with self._pool.acquire() as conn:
             query = """
                     SELECT id FROM users
                     WHERE chat_id=$1
                     """
-            return await conn.fetchval(query, chat_id)
+            id_ = await conn.fetchval(query, chat_id)
+            return id_ if id_ else await self._add_user(chat_id)
 
-    async def _get_word_id(self, word: str) -> int:
+    async def _get_word_id(self, word: str) -> int | None:
         async with self._pool.acquire() as conn:
             query = """
                     SELECT id FROM words
@@ -207,3 +240,16 @@ class DbRepo:
                     RETURNING id
                     """
             return await conn.fetchval(query, chat_id)
+
+    async def _check_word_exists(self, chat_id: int, word: str) -> bool:
+        user_id = await self._get_user_id(chat_id)
+        word_id = await self._get_word_id(word)
+        if not word_id:
+            return False
+        async with self._pool.acquire() as conn:
+            word_exists = await conn.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM users_words WHERE word_id = $1 and user_id = $2)",
+                word_id,
+                user_id,
+            )
+        return word_exists
