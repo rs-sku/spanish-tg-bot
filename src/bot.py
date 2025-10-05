@@ -27,7 +27,13 @@ class ButtonsText(Enum):
 
 
 class MsgsText(Enum):
-    START = "Bienvenido amigo! Желаю хорошо провести время за изучением нового ☝"
+    START = (
+        "Bienvenido amigo! Желаю хорошо провести время за изучением нового!\n\n"
+        "P.S. Вы можете поучаствовать в этом проекте здесь \n👇\n"
+        "<a href='https://github.com/rs-sku/spanish-tg-bot'>перейти</a>\n"
+        "\n И так же связаться со мной \n👇\n"
+        "<a href='https://t.me/rs_sku'>@rs_sku</a>"
+    )
     CHOOSE_DIFF = "Выберите уровень сложности слов 🎮"
     SHOWED_WORDS = "Ваши слова 👇 Как запомните - жмите на кнопку 📝\n\n"
     TRANSLATE = "❓ Переведите слово: "
@@ -90,7 +96,9 @@ class LangBot:
         @self._dp.message(CommandStart())
         async def handle(msg: Message) -> None:
             keyboard = self._build_main_keyboard()
-            await msg.answer(text=MsgsText.START.value, reply_markup=keyboard)
+            await msg.answer(
+                text=MsgsText.START.value, reply_markup=keyboard, parse_mode="HTML"
+            )
 
     async def _set_commands(self) -> None:
         commands = [BotCommand(command="start", description="Start cmd")]

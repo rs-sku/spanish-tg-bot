@@ -1,6 +1,5 @@
 from googletrans import Translator
 
-from src.core.constansts import Constants
 
 
 class TranslatorClient:
