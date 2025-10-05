@@ -156,7 +156,9 @@ class DbRepo:
             return rows
 
     @async_log_decorator(logger)
-    async def get_by_translation(self, chat_id, translation: str) -> list[asyncpg.Record]:
+    async def get_by_translation(
+        self, chat_id, translation: str
+    ) -> list[asyncpg.Record]:
         user_id = await self._get_user_id(chat_id)
         async with self._pool.acquire() as conn:
             query = """

@@ -19,7 +19,7 @@ class DbServiceInterface(ABC):
         self, chat_id: int, is_base: bool
     ) -> list[dict[str, str]]:
         pass
-    
+
     @abstractmethod
     async def add_user_word(self, chat_id: int, word: str, translation: str) -> bool:
         pass
