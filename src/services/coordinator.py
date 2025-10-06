@@ -56,7 +56,7 @@ class Coordinator:
         else:
             words = await self._db_service.get_random_words(chat_id, is_base)
         data = [json.dumps(word_tr) for word_tr in words]
-        await self._redis_service.add_words(chat_id, data)
+        self._redis_service.add_words(chat_id, data)
         return words
 
     async def add_user_word(self, chat_id: int, rus_word: str) -> str | None:

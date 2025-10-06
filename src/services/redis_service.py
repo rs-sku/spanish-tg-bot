@@ -7,11 +7,11 @@ logger = logging.getLogger(__name__)
 
 
 class RedisService(RedisServiceInterface):
-    def __init__(self, repo: RedisRepo):
+    def __init__(self, repo: RedisRepo) -> None:
         self._repo = repo
 
     @sync_log_decorator(logger)
-    async def add_words(self, chat_id: int, words: list[str]) -> None:
+    def add_words(self, chat_id: int, words: list[str]) -> None:
         if self._repo.in_process(chat_id):
             return
         self._repo.set_in_process(chat_id)

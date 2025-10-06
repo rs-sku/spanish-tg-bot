@@ -8,7 +8,7 @@ from src.repositories import redis_repo, db_repo
 from src.services import redis_service, db_service, seed_service
 from src.core.settings import Settings
 from aiogram import Bot, Dispatcher
-from bot import LangBot
+from src.bot import LangBot
 from src import translator_client
 from aiogram.fsm.storage.memory import MemoryStorage
 
@@ -22,7 +22,7 @@ async def on_startup(db: Database) -> db_repo.DbRepo:
     await db.init(
         user=Settings.POSTGRES_USER,
         password=Settings.POSTGRES_PASSWORD,
-        database=Settings.POSTGRES_DATABASE,
+        database=Settings.POSTGRES_DB,
         host=Settings.POSTGRES_HOST,
         port=Settings.POSTGRES_PORT,
     )
