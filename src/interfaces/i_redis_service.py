@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 
 class RedisServiceInterface(ABC):
     @abstractmethod
-    async def add_words(self, chat_id: int, words: list[str]) -> None:
+    def add_words(self, chat_id: int, words: list[str]) -> None:
         pass
 
     @abstractmethod
