@@ -26,8 +26,8 @@ jobs:
 
       - name: ruff check
         run: |
-          ruff check .  
-      
+          ruff check .
+
       - name: test
         run: |
           make up_tdb
@@ -38,9 +38,9 @@ jobs:
           make build
 
       - name: push
-      - run: |
+        run: |
           make push
-      
+
       - name: deploy
         uses: appleboy/ssh-action@master
         with:
