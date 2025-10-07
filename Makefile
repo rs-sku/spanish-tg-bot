@@ -3,7 +3,7 @@ lint:
 	ruff check --fix .
 
 build:
-	docker build -t spanish_bot:latest .
+	docker build -t rssku/spanish-tg-bot:latest .
 
 up:
 	docker-compose up -d
