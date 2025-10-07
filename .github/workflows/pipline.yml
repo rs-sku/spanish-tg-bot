@@ -32,12 +32,20 @@ jobs:
         run: |
           make up_tdb
           pytest
+
+      - name: build
+        run: |
+          make build
+
+      - name: push
+      - run: |
+          make push
       
-      - name: Deploy
+      - name: deploy
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_LOGIN }}
-          password: ${{ secrets.SERVER_PASSWORD }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             /home/roman/restart_bot.sh
