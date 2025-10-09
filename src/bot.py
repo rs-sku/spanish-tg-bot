@@ -47,6 +47,7 @@ class MsgsText(Enum):
     NO_REPEAT = "У вас ещё нет сохранённых слов, начните с новых 📜"
     WRONG_WORD_INPUT = "Неверный формат ввода 🤔"
     CAN_NOT_DELETE = "В коллекции для повторения нет такого слова, нажмите снова 🙄"
+    NO_DELETE = "Нечего удалять 🙃"
     WORD_ADDED = " добавлено в коллекцию для повторения"
     WORD_DELETED = " успешно удалено 👌"
     ALREADY_HAS_WORD = "В коллекции для повторения уже есть данное слово, нажмите снова"
@@ -314,6 +315,10 @@ class LangBot:
     def _handle_del_request(self) -> None:
         @self._dp.message(F.text == ButtonsText.DELETE_WORD.value)
         async def handle(msg: Message, state: FSMContext) -> None:
+            chat_id = msg.chat.id
+            if not await self._coordinator.check_has_repeat_words(chat_id):
+                await msg.answer(text=MsgsText.NO_DELETE.value)
+                return
             await state.set_state(DeleteWordRequest.waiting_for_word)
             await msg.answer(text=MsgsText.TYPE_WORD_TO_DELETE.value)
 

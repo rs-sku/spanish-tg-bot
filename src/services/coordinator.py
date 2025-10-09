@@ -43,22 +43,6 @@ class Coordinator:
     async def get_random_variants(self, chat_id: int) -> list[str]:
         return await self._db_service.get_random_variants(chat_id)
 
-    async def _add_words(
-        self,
-        chat_id: int,
-        is_repeat: bool,
-        is_base: bool = False,
-    ) -> list[dict[str, str]] | None:
-        if is_repeat and not is_base:
-            words = await self._db_service.get_repeat_words(chat_id)
-            if not words:
-                return
-        else:
-            words = await self._db_service.get_random_words(chat_id, is_base)
-        data = [json.dumps(word_tr) for word_tr in words]
-        self._redis_service.add_words(chat_id, data)
-        return words
-
     async def add_user_word(self, chat_id: int, rus_word: str) -> str | None:
         spanish_word = await self._translator.translate_one(
             rus_word, Constants.SPANISH_DEST.value
@@ -78,3 +62,22 @@ class Coordinator:
 
     def validate_input_word(self, word: str) -> bool:
         return word.isalpha()
+
+    async def check_has_repeat_words(self, chat_id: int) -> bool:
+        return await self._db_service.get_repeat_words(chat_id) is not None
+
+    async def _add_words(
+        self,
+        chat_id: int,
+        is_repeat: bool,
+        is_base: bool = False,
+    ) -> list[dict[str, str]] | None:
+        if is_repeat and not is_base:
+            words = await self._db_service.get_repeat_words(chat_id)
+            if not words:
+                return
+        else:
+            words = await self._db_service.get_random_words(chat_id, is_base)
+        data = [json.dumps(word_tr) for word_tr in words]
+        self._redis_service.add_words(chat_id, data)
+        return words
