@@ -10,4 +10,5 @@ class Constants(Enum):
     SHOW_COUNT = 5
     VARIANTS_COUNT = 3
     INTERNAL_ERROR = "Something went wrong... Попробуйте снова"
+    USER_WORDS_PAGE_SIZE = 5
     MIN_WORDS_TABLE_SIZE = 500

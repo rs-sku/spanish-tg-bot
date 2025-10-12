@@ -31,6 +31,8 @@ class RedisRepo:
     @sync_log_decorator(logger)
     def get_random_word(self, chat_id: int) -> str | None:
         count = self._get_attempts_count(chat_id)
+        if not count:
+            return
         if count > 0:
             return self._r.srandmember(f"{chat_id}:{count}")
 
@@ -38,11 +40,15 @@ class RedisRepo:
     def move_word(self, chat_id: int, word: str) -> None:
         count = self._get_attempts_count(chat_id)
         new_count = count - 1
+        new_key = f"{chat_id}:{new_count}"
         if new_count >= 0:
-            self._r.smove(f"{chat_id}:{count}", f"{chat_id}:{new_count}", word)
+            self._r.smove(f"{chat_id}:{count}", f"{new_key}", word)
+            if new_count == 0:
+                self._r.expire(new_key, 3600)
+                self._r.expire(chat_id, 3600)
 
     @sync_log_decorator(logger)
-    def get_all(self, chat_id: int) -> set[str]:
+    def get_all_words(self, chat_id: int) -> set[str]:
         count = self._get_attempts_count(chat_id)
         return self._r.smembers(f"{chat_id}:{count}")
 
@@ -50,16 +56,18 @@ class RedisRepo:
     def delete_words(self, chat_id: int) -> None:
         keys = self._r.keys(f"{chat_id}:*")
         if keys:
-            logger.info(f"{keys=}")
             self._r.delete(*keys)
 
-    def reduce_attempts_count(self, chat_id: int) -> int:
+    def reduce_attempts_count(self, chat_id: int) -> int | None:
         count = self._get_attempts_count(chat_id)
+        if not count:
+            return
         new_count = count - 1
         if new_count < 0:
             return
         self._r.set(chat_id, new_count)
         return new_count
 
-    def _get_attempts_count(self, chat_id) -> int:
-        return int(self._r.get(chat_id))
+    def _get_attempts_count(self, chat_id) -> int | None:
+        count = self._r.get(chat_id)
+        return int(count) if count else None
