@@ -4,6 +4,12 @@ from src.services.db_service import DbService
 from src.translator_client import TranslatorClient
 import json
 
+from src.utils.log_decorator import async_log_decorator
+import logging
+
+
+logger = logging.getLogger(__name__)
+
 
 class Coordinator:
     def __init__(
@@ -19,7 +25,7 @@ class Coordinator:
     async def show_words(
         self, chat_id: int, is_repeat: bool, is_base: bool = False
     ) -> str | None:
-        words = await self._add_words(chat_id, is_repeat, is_base)
+        words = await self._cache_words(chat_id, is_repeat, is_base)
         if not words:
             return
         res = ""
@@ -27,15 +33,15 @@ class Coordinator:
             res += f"{list(word_tr.keys())[0]} - {list(word_tr.values())[0]}\n"
         return res
 
-    async def get_random_word_or_save(
-        self, chat_id: int, saving: bool = False
-    ) -> list[str] | None:
+    def get_random_word(self, chat_id: int) -> dict[str, str] | None:
         redis_res = self._redis_service.get_random_word(chat_id)
-        if isinstance(redis_res, str):
-            return json.loads(redis_res)
-        if saving:
-            words = [list(json.loads(word_tr).keys())[0] for word_tr in redis_res]
-            await self._db_service.save_user_words(chat_id, words)
+        if not redis_res:
+            return
+        return json.loads(redis_res)
+
+    def get_all_cached_words(self, chat_id: int) -> list[str]:
+        redis_words = self._redis_service.get_all_words(chat_id)
+        return [list(json.loads(word_tr).keys())[0] for word_tr in redis_words]
 
     def move_word(self, chat_id: int, word_tr: dict[str, str]) -> None:
         self._redis_service.move_word(chat_id, json.dumps(word_tr))
@@ -43,7 +49,9 @@ class Coordinator:
     async def get_random_variants(self, chat_id: int) -> list[str]:
         return await self._db_service.get_random_variants(chat_id)
 
-    async def add_user_word(self, chat_id: int, rus_word: str) -> str | None:
+    async def translate_and_add_user_word(
+        self, chat_id: int, rus_word: str
+    ) -> str | None:
         spanish_word = await self._translator.translate_one(
             rus_word, Constants.SPANISH_DEST.value
         )
@@ -52,13 +60,26 @@ class Coordinator:
             raise ValueError
         if not await self._db_service.add_user_word(chat_id, spanish_word, rus_word):
             return
-        return f"'{rus_word} - {spanish_word}'"
+        return f'"{rus_word} - {spanish_word}"'
+
+    async def add_user_word(self, chat_id: int, word: str) -> str | None:
+        if not await self._db_service.add_user_word(chat_id, word):
+            return
+        return word
+
+    async def add_user_words(self, chat_id: int) -> bool:
+        redis_words = self._redis_service.get_all_words(chat_id)
+        if not redis_words:
+            return False
+        words = [list(json.loads(word_tr).keys())[0] for word_tr in redis_words]
+        await self._db_service.add_user_words(chat_id, words)
+        return True
 
     async def delete_user_word(self, chat_id: int, rus_word: str) -> str | None:
         rus_word = rus_word.capitalize()
         if not await self._db_service.delete_user_word(chat_id, rus_word):
             return
-        return f"'{rus_word}'"
+        return f'"{rus_word}"'
 
     def validate_input_word(self, word: str) -> bool:
         return word.isalpha()
@@ -66,7 +87,27 @@ class Coordinator:
     async def check_has_repeat_words(self, chat_id: int) -> bool:
         return await self._db_service.get_repeat_words(chat_id) is not None
 
-    async def _add_words(
+    @async_log_decorator(logger)
+    async def get_page_of_words(
+        self, chat_id: int, page: int
+    ) -> tuple[list[str] | bool] | None:
+        count = await self._db_service.count_user_words(chat_id)
+        if count == 0:
+            return
+        prev = page > 1
+        next_ = count > Constants.USER_WORDS_PAGE_SIZE.value * page
+        offset = (page - 1) * Constants.USER_WORDS_PAGE_SIZE.value
+        words = await self._db_service.get_paginated_words(
+            chat_id,
+            Constants.USER_WORDS_PAGE_SIZE.value,
+            offset,
+        )
+        if not words:
+            return
+        res = [f"{word_tr['word']} - {word_tr['translation']}" for word_tr in words]
+        return res, prev, next_
+
+    async def _cache_words(
         self,
         chat_id: int,
         is_repeat: bool,

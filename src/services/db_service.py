@@ -13,7 +13,7 @@ class DbService(DbServiceInterface):
             return
         return [{row["word"]: row["translation"]} for row in rows]
 
-    async def save_user_words(self, chat_id: int, words: list[str]) -> None:
+    async def add_user_words(self, chat_id: int, words: list[str]) -> None:
         await self._repo.add_user_words(chat_id, words)
 
     async def get_random_variants(self, chat_id: int) -> list[str]:
@@ -30,8 +30,23 @@ class DbService(DbServiceInterface):
         )
         return [{row["word"]: row["translation"]} for row in rows]
 
-    async def add_user_word(self, chat_id: int, word: str, translation: str) -> bool:
+    async def add_user_word(
+        self, chat_id: int, word: str, translation: str | None = None
+    ) -> bool:
         return await self._repo.add_user_word(chat_id, word, translation)
+
+    async def get_paginated_words(
+        self, chat_id: int, limit: int, offset: int
+    ) -> list[dict[str, str]] | None:
+        rows = await self._repo.get_paginated_words(chat_id, limit, offset)
+        if not rows:
+            return
+        return [
+            {"word": row["word"], "translation": row["translation"]} for row in rows
+        ]
+
+    async def count_user_words(self, chat_id: int) -> int:
+        return await self._repo.count_user_words(chat_id)
 
     async def delete_user_word(self, chat_id: int, translation: str) -> bool:
         rows = await self._repo.get_by_translation(chat_id, translation)
