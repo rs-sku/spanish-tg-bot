@@ -59,9 +59,9 @@ class MsgsText(Enum):
     WORD_DELETED = " успешно удалено из коллекции👌"
     WORDS_ADDED = "Все слова успешно добавлены в коллекцию 👌"
     ALREADY_HAS_WORD = "В коллекции уже есть данное слово 🙃"
-    TYPE_WORD_TO_ADD = "Введите русский вариант слова"
-    TYPE_WORD_TO_DELETE = "Введите русский вариант слова из коллекции для повторения"
-    IS_SPANISH = "Это испанское слово, нажмите снова 😅"
+    TYPE_WORD_TO_ADD = "Введите русский вариант слова и подождите пару секунд ✍️"
+    TYPE_WORD_TO_DELETE = "Введите русский вариант слова из Вашей коллекции ✍️"
+    BAD_WORD = "Плохое слово 🤬"
     NOT_RELLEVANT_ACTION = "Действие уже не актуально для Вас 🙄"
     CHOOSE_ACTION = "Выберите действие 👇"
 
@@ -403,7 +403,7 @@ class LangBot:
             try:
                 res = await self._coordinator.translate_and_add_user_word(chat_id, word)
             except ValueError:
-                await msg.answer(text=MsgsText.IS_SPANISH.value)
+                await msg.answer(text=MsgsText.BAD_WORD.value)
                 return
             ans = (
                 f"{res}{MsgsText.WORD_ADDED.value}"
@@ -474,7 +474,7 @@ class LangBot:
             builder = self._build_del_words_buttons(words)
             if next_:
                 builder = self._add_pagination_buttons(builder, prev, next_, 1)
-            await callback.message.edit_text(
+            await callback.message.answer(
                 text="\n".join(words), reply_markup=builder.as_markup()
             )
 
