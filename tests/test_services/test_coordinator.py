@@ -46,30 +46,30 @@ async def test_show_words_repeat_no_words(mocker, coordinator):
 
 
 @pytest.mark.asyncio
-async def test_get_random_word_or_save_string(mocker, coordinator):
+async def test_get_random_word(mocker, coordinator):
     coord, _ = coordinator
     coord._redis_service.get_random_word = mocker.Mock(
-        return_value=json.dumps(["Hola", "Привет"])
+        return_value=json.dumps({"Hola": "Привет"})
     )
 
-    result = await coord.get_random_word_or_save(coord, 123)  # просто синхронный вызов
+    result = coord.get_random_word(123)
 
-    assert result == ["Hola", "Привет"]
+    assert result == {"Hola": "Привет"}
 
 
 @pytest.mark.asyncio
-async def test_get_random_word_or_save_saving(mocker, coordinator):
+async def test_add_user_words(mocker, coordinator):
     coord, _ = coordinator
     redis_res = [
         json.dumps({"Hola": "Привет"}),
         json.dumps({"Adiós": "Пока"}),
     ]
-    coord._redis_service.get_random_word = mocker.Mock(return_value=redis_res)
-    coord._db_service.save_user_words = mocker.AsyncMock()
+    coord._redis_service.get_all_words = mocker.Mock(return_value=redis_res)
+    coord._db_service.add_user_words = mocker.AsyncMock()
 
-    await coord.get_random_word_or_save(123, saving=True)
+    await coord.add_user_words(123)
 
-    coord._db_service.save_user_words.assert_awaited_once_with(123, ["Hola", "Adiós"])
+    coord._db_service.add_user_words.assert_awaited_once_with(123, ["Hola", "Adiós"])
 
 
 def test_move_word(mocker, coordinator):
@@ -83,27 +83,26 @@ def test_move_word(mocker, coordinator):
 
 
 @pytest.mark.asyncio
-async def test_add_user_word(mocker, coordinator):
+async def test_translate_and_add_user_word(mocker, coordinator):
     coord, translator = coordinator
     translator.translate_one = mocker.AsyncMock(return_value="hola")
     coord._db_service.add_user_word = mocker.AsyncMock(return_value=True)
 
-    res = await coord.add_user_word(123, "привет")
+    res = await coord.translate_and_add_user_word(123, "привет")
 
     translator.translate_one.assert_awaited_once_with(
         "привет", Constants.SPANISH_DEST.value
     )
     coord._db_service.add_user_word.assert_awaited_once_with(123, "Hola", "Привет")
-    assert res == "'Привет - Hola'"
+    assert res == '"Привет - Hola"'
 
 
 @pytest.mark.asyncio
 async def test_add_user_word_same_word(mocker, coordinator):
-    coord, translator = coordinator
-    translator.translate_one = mocker.AsyncMock(return_value="привет")
-
-    with pytest.raises(ValueError):
-        await coord.add_user_word(123, "привет")
+    coord, _ = coordinator
+    coord._db_service.add_user_word = mocker.AsyncMock(return_value=None)
+    res = await coord.add_user_word(123, "привет")
+    assert res is None
 
 
 @pytest.mark.asyncio
@@ -124,7 +123,7 @@ async def test_delete_user_word_success(mocker, coordinator):
     res = await coord.delete_user_word(123, "привет")
 
     coord._db_service.delete_user_word.assert_awaited_once_with(123, "Привет")
-    assert res == "'Привет'"
+    assert res == '"Привет"'
 
 
 @pytest.mark.asyncio

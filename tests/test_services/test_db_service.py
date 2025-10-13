@@ -27,11 +27,11 @@ async def test_get_repeat_words_empty(db_service):
 
 
 @pytest.mark.asyncio
-async def test_save_user_words(db_service):
+async def test_add_user_words(db_service):
     service, repo = db_service
     chat_id, words = 123, ["Hola", "Adiós"]
 
-    await service.save_user_words(chat_id, words)
+    await service.add_user_words(chat_id, words)
 
     repo.add_user_words.assert_awaited_once_with(chat_id, words)
 

@@ -19,16 +19,17 @@ class RedisService(RedisServiceInterface):
         self._repo.add_words(chat_id, words)
         self._repo.remove_in_process(chat_id)
 
-    def get_random_word(self, chat_id: int) -> str | set[str]:
+    def get_random_word(self, chat_id: int) -> str | None:
         word = self._repo.get_random_word(chat_id)
         if not word:
             count = self._repo.reduce_attempts_count(chat_id)
-            if count == 0:
-                res = self._repo.get_all(chat_id)
-                self._repo.delete_words(chat_id)
-                return res
+            if not count or count == 0:
+                return
             word = self._repo.get_random_word(chat_id)
         return word
+
+    def get_all_words(self, chat_id: int) -> set[str]:
+        return self._repo.get_all_words(chat_id)
 
     def move_word(self, chat_id: int, word_tr: str) -> None:
         self._repo.move_word(chat_id, word_tr)

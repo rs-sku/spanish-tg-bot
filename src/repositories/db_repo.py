@@ -66,8 +66,19 @@ class DbRepo:
         async with self._pool.acquire() as conn:
             return await conn.fetchval("SELECT COUNT(*) FROM words")
 
+    async def count_user_words(self, chat_id: int) -> int:
+        user_id = await self._get_user_id(chat_id)
+        async with self._pool.acquire() as conn:
+            query = """
+                        SELECT COUNT(*) FROM users_words
+                        WHERE user_id = $1
+                        """
+            return await conn.fetchval(query, user_id)
+
     @async_log_decorator(logger)
-    async def add_user_word(self, chat_id: int, word: str, translation: str) -> bool:
+    async def add_user_word(
+        self, chat_id: int, word: str, translation: str | None = None
+    ) -> bool:
         user_id = await self._get_user_id(chat_id)
         if await self._check_word_exists(chat_id, word):
             return False
@@ -98,7 +109,7 @@ class DbRepo:
                     LEFT JOIN users_words uw 
                         ON w.id = uw.word_id AND uw.user_id = $1
                     WHERE uw.word_id IS NULL
-                    AND w.is_base = $2
+                        AND w.is_base = $2
                     ORDER BY RANDOM()
                     LIMIT $3
                     """
@@ -135,7 +146,7 @@ class DbRepo:
             await conn.execute(
                 """
                 DELETE FROM users_words
-                WHERE word_id=$1 and user_id=$2
+                WHERE word_id = $1 and user_id = $2
                 """,
                 word_id,
                 user_id,
@@ -149,11 +160,28 @@ class DbRepo:
             if not ids:
                 return
             query = """
-                    SELECT word, translation from words
+                    SELECT word, translation 
+                    FROM words
                     WHERE id = ANY($1::int[])
                     """
-            rows = await conn.fetch(query, ids)
-            return rows
+            return await conn.fetch(query, ids)
+
+    async def get_paginated_words(
+        self, chat_id: int, limit: int, offset: int
+    ) -> list[asyncpg.Record] | None:
+        user_id = await self._get_user_id(chat_id)
+        async with self._pool.acquire() as conn:
+            query = """
+                    SELECT word, translation 
+                    FROM words w
+                    JOIN users_words uw 
+                        ON w.id = uw.word_id 
+                    WHERE uw.user_id = $1
+                    ORDER BY w.id
+                    LIMIT $2
+                    OFFSET $3
+                    """
+            return await conn.fetch(query, user_id, limit, offset)
 
     @async_log_decorator(logger)
     async def get_by_translation(
@@ -221,7 +249,7 @@ class DbRepo:
         async with self._pool.acquire() as conn:
             query = """
                     SELECT id FROM users
-                    WHERE chat_id=$1
+                    WHERE chat_id = $1
                     """
             id_ = await conn.fetchval(query, chat_id)
             return id_ if id_ else await self._add_user(chat_id)
@@ -230,7 +258,7 @@ class DbRepo:
         async with self._pool.acquire() as conn:
             query = """
                     SELECT id FROM words
-                    WHERE word=$1
+                    WHERE word = $1
                     """
             return await conn.fetchval(query, word)
 

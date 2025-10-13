@@ -7,7 +7,7 @@ class DbServiceInterface(ABC):
         pass
 
     @abstractmethod
-    async def save_user_words(self, chat_id: int, words: list[dict[str, str]]) -> None:
+    async def add_user_words(self, chat_id: int, words: list[dict[str, str]]) -> None:
         pass
 
     @abstractmethod
@@ -18,6 +18,16 @@ class DbServiceInterface(ABC):
     async def get_random_words(
         self, chat_id: int, is_base: bool
     ) -> list[dict[str, str]]:
+        pass
+
+    @abstractmethod
+    async def get_paginated_words(
+        self, chat_id: int, limit: int, offset: int
+    ) -> list[dict[str, str]] | None:
+        pass
+
+    @abstractmethod
+    async def count_user_words(self, chat_id: int) -> int:
         pass
 
     @abstractmethod

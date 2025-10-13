@@ -41,9 +41,7 @@ def test_get_random_word_third(redis_service):
     res = service.get_random_word(chat_id)
     repo_mock.get_random_word.assert_called_once_with(chat_id)
     repo_mock.reduce_attempts_count.assert_called_once_with(chat_id)
-    repo_mock.get_all.assert_called_once_with(chat_id)
-    repo_mock.delete_words.assert_called_once_with(chat_id)
-    assert res == {word}
+    assert res is None
 
 
 def test_move_word(redis_service):
