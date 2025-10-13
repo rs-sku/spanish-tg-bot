@@ -45,12 +45,12 @@ def test_move_word(redis_repo):
     r_mock.smove.assert_called_once_with("123:2", "123:1", "Hola")
 
 
-def test_get_all(redis_repo):
+def test_get_all_words(redis_repo):
     service, r_mock = redis_repo
     chat_id = 123
     r_mock.get.return_value = "2"
     r_mock.smembers.return_value = {"Hola", "Adiós"}
-    res = service.get_all(chat_id)
+    res = service.get_all_words(chat_id)
     assert res == {"Hola", "Adiós"}
     r_mock.smembers.assert_called_once_with("123:2")
 

@@ -5,6 +5,7 @@ from src.translator_client import TranslatorClient
 import json
 
 from src.utils.log_decorator import async_log_decorator
+from src.utils.word_validation import validate_word
 import logging
 
 
@@ -52,12 +53,12 @@ class Coordinator:
     async def translate_and_add_user_word(
         self, chat_id: int, rus_word: str
     ) -> str | None:
+        if not await validate_word(rus_word):
+            raise ValueError()
         spanish_word = await self._translator.translate_one(
             rus_word, Constants.SPANISH_DEST.value
         )
         rus_word, spanish_word = rus_word.capitalize(), spanish_word.capitalize()
-        if rus_word == spanish_word:
-            raise ValueError
         if not await self._db_service.add_user_word(chat_id, spanish_word, rus_word):
             return
         return f'"{rus_word} - {spanish_word}"'
