@@ -1,13 +1,12 @@
-from src.core.constansts import Constants
-from src.services.redis_service import RedisService
-from src.services.db_service import DbService
-from src.translator_client import TranslatorClient
 import json
-
-from src.utils.log_decorator import async_log_decorator
-from src.utils.word_validation import validate_word
 import logging
 
+from src.core.constansts import Constants
+from src.services.db_service import DbService
+from src.services.redis_service import RedisService
+from src.translator_client import TranslatorClient
+from src.utils.log_decorator import async_log_decorator
+from src.utils.word_validation import validate_word
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +22,7 @@ class Coordinator:
         self._db_service = db_service
         self._translator = translator_client
 
-    async def show_words(
-        self, chat_id: int, is_repeat: bool, is_base: bool = False
-    ) -> str | None:
+    async def show_words(self, chat_id: int, is_repeat: bool, is_base: bool = False) -> str | None:
         words = await self._cache_words(chat_id, is_repeat, is_base)
         if not words:
             return
@@ -50,14 +47,10 @@ class Coordinator:
     async def get_random_variants(self, chat_id: int) -> list[str]:
         return await self._db_service.get_random_variants(chat_id)
 
-    async def translate_and_add_user_word(
-        self, chat_id: int, rus_word: str
-    ) -> str | None:
+    async def translate_and_add_user_word(self, chat_id: int, rus_word: str) -> str | None:
         if not await validate_word(rus_word):
             raise ValueError()
-        spanish_word = await self._translator.translate_one(
-            rus_word, Constants.SPANISH_DEST.value
-        )
+        spanish_word = await self._translator.translate_one(rus_word, Constants.SPANISH_DEST.value)
         rus_word, spanish_word = rus_word.capitalize(), spanish_word.capitalize()
         if not await self._db_service.add_user_word(chat_id, spanish_word, rus_word):
             return
@@ -89,9 +82,7 @@ class Coordinator:
         return await self._db_service.get_repeat_words(chat_id) is not None
 
     @async_log_decorator(logger)
-    async def get_page_of_words(
-        self, chat_id: int, page: int
-    ) -> tuple[list[str] | bool] | None:
+    async def get_page_of_words(self, chat_id: int, page: int) -> tuple[list[str] | bool] | None:
         count = await self._db_service.count_user_words(chat_id)
         if count == 0:
             return

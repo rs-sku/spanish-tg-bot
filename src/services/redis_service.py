@@ -1,6 +1,7 @@
-from src.repositories.redis_repo import RedisRepo
-from src.interfaces.i_redis_service import RedisServiceInterface
 import logging
+
+from src.interfaces.i_redis_service import RedisServiceInterface
+from src.repositories.redis_repo import RedisRepo
 from src.utils.log_decorator import sync_log_decorator
 
 logger = logging.getLogger(__name__)

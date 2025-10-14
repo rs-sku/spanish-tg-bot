@@ -15,15 +15,11 @@ class DbServiceInterface(ABC):
         pass
 
     @abstractmethod
-    async def get_random_words(
-        self, chat_id: int, is_base: bool
-    ) -> list[dict[str, str]]:
+    async def get_random_words(self, chat_id: int, is_base: bool) -> list[dict[str, str]]:
         pass
 
     @abstractmethod
-    async def get_paginated_words(
-        self, chat_id: int, limit: int, offset: int
-    ) -> list[dict[str, str]] | None:
+    async def get_paginated_words(self, chat_id: int, limit: int, offset: int) -> list[dict[str, str]] | None:
         pass
 
     @abstractmethod
