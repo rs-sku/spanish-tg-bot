@@ -1,17 +1,17 @@
 import asyncio
 import logging
 
+from aiogram import Bot, Dispatcher
+from aiogram.fsm.storage.memory import MemoryStorage
 from googletrans import Translator
 from redis import Redis
-from src.core.db import Database
-from src.repositories import redis_repo, db_repo
-from src.services import redis_service, db_service, seed_service
-from src.core.settings import Settings
-from aiogram import Bot, Dispatcher
-from src.bot import LangBot
-from src import translator_client
-from aiogram.fsm.storage.memory import MemoryStorage
 
+from src import translator_client
+from src.bot import LangBot
+from src.core.db import Database
+from src.core.settings import Settings
+from src.repositories import db_repo, redis_repo
+from src.services import db_service, redis_service, seed_service
 from src.services.coordinator import Coordinator
 
 logger = logging.getLogger(__name__)

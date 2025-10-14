@@ -1,20 +1,21 @@
+import random
+from enum import Enum
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     BotCommand,
+    InlineKeyboardButton,
     KeyboardButton,
     Message,
     ReplyKeyboardMarkup,
 )
 from aiogram.types.callback_query import CallbackQuery
-from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from src.services.coordinator import Coordinator
-from enum import Enum
 
-import random
+from src.services.coordinator import Coordinator
 
 
 class ButtonsText(Enum):
@@ -47,8 +48,7 @@ class MsgsText(Enum):
     WRONG_ANS = "Неправильно 😔\n"
     CORRECT_ANSWER = "Правильно ✔️\n"
     FINISH_LEARNING = (
-        "Поздравляю! Вы выучили все новые слова и теперь можете выбрать, "
-        "какие из них добавить в коллекцию 😎"
+        "Поздравляю! Вы выучили все новые слова и теперь можете выбрать, какие из них добавить в коллекцию 😎"
     )
     FINISH_REPEAT = "Поздравляю! Вы успешно закрепили знания 😎"
     NO_REPEAT = "В Вашей коллекции ещё нет слов, начните с новых 📜"
@@ -118,9 +118,7 @@ class LangBot:
         @self._dp.message(CommandStart())
         async def handle(msg: Message) -> None:
             keyboard = self._build_main_keyboard()
-            await msg.answer(
-                text=MsgsText.START.value, reply_markup=keyboard, parse_mode="HTML"
-            )
+            await msg.answer(text=MsgsText.START.value, reply_markup=keyboard, parse_mode="HTML")
 
     async def _set_commands(self) -> None:
         commands = [BotCommand(command="start", description="Start cmd")]
@@ -145,17 +143,13 @@ class LangBot:
         @self._dp.message(F.text == ButtonsText.NEW_WORDS.value)
         async def handle(msg: Message) -> None:
             builder = InlineKeyboardBuilder()
-            builder.button(
-                text=ButtonsText.BASE.value, callback_data=ButtonsText.BASE.value
-            )
+            builder.button(text=ButtonsText.BASE.value, callback_data=ButtonsText.BASE.value)
             builder.button(
                 text=ButtonsText.ADVANCED.value,
                 callback_data=ButtonsText.ADVANCED.value,
             )
             builder.adjust(1)
-            await msg.answer(
-                text=MsgsText.CHOOSE_DIFF.value, reply_markup=builder.as_markup()
-            )
+            await msg.answer(text=MsgsText.CHOOSE_DIFF.value, reply_markup=builder.as_markup())
 
     def _build_test_inline_keyboard(self, action: str) -> InlineKeyboardBuilder:
         builder = InlineKeyboardBuilder()
@@ -167,9 +161,7 @@ class LangBot:
         return builder
 
     def _handle_show_new_words(self) -> None:
-        @self._dp.callback_query(
-            F.data.in_([ButtonsText.BASE.value, ButtonsText.ADVANCED.value])
-        )
+        @self._dp.callback_query(F.data.in_([ButtonsText.BASE.value, ButtonsText.ADVANCED.value]))
         async def handle(callback: CallbackQuery) -> None:
             chat_id = callback.message.chat.id
             diff = callback.data
@@ -197,9 +189,7 @@ class LangBot:
                 reply_markup=builder.as_markup(),
             )
 
-    def _build_choice_inline_keyboard(
-        self, variants: list[str]
-    ) -> InlineKeyboardBuilder:
+    def _build_choice_inline_keyboard(self, variants: list[str]) -> InlineKeyboardBuilder:
         builder = InlineKeyboardBuilder()
         shuffled_variants = variants.copy()
         random.shuffle(shuffled_variants)
@@ -242,9 +232,7 @@ class LangBot:
         @self._dp.callback_query(F.data.startswith(ButtonsText.TEST.value))
         async def handle(callback: CallbackQuery, state: FSMContext):
             action = callback.data.split(":")[-1]
-            text, builder = await self._generate_question(
-                callback.message.chat.id, state, action=action
-            )
+            text, builder = await self._generate_question(callback.message.chat.id, state, action=action)
             await callback.message.edit_text(
                 text=text,
                 reply_markup=builder.as_markup(),
@@ -265,30 +253,22 @@ class LangBot:
             await state.clear()
             correct_ans = list(word_tr.keys())[0]
             if ans == correct_ans:
-                await self._process_correct_ans(
-                    callback, state, chat_id, word_tr, action
-                )
+                await self._process_correct_ans(callback, state, chat_id, word_tr, action)
             else:
-                await self._process_wrong_ans(
-                    callback, state, chat_id, word_tr, variants, action
-                )
+                await self._process_wrong_ans(callback, state, chat_id, word_tr, variants, action)
 
     async def finish_learning(self, callback: CallbackQuery) -> None:
         chat_id = callback.message.chat.id
         words = self._coordinator.get_all_cached_words(chat_id)
         builder = InlineKeyboardBuilder()
         for word in words:
-            builder.button(
-                text=word, callback_data=f"{CallbackDataPrefixes.SAVE.value}:{word}"
-            )
+            builder.button(text=word, callback_data=f"{CallbackDataPrefixes.SAVE.value}:{word}")
         builder.button(
             text=ButtonsText.ADD_ALL.value,
             callback_data=f"{CallbackDataPrefixes.SAVE.value}:{CallbackDataPrefixes.ALL.value}",
         )
         builder.adjust(2, 2, 1, 1)
-        await callback.message.edit_text(
-            text=MsgsText.FINISH_LEARNING.value, reply_markup=builder.as_markup()
-        )
+        await callback.message.edit_text(text=MsgsText.FINISH_LEARNING.value, reply_markup=builder.as_markup())
         await callback.answer()
 
     async def _process_correct_ans(
@@ -310,9 +290,7 @@ class LangBot:
         else:
             text, builder = next_step
             new_text = f"{MsgsText.CORRECT_ANSWER.value}{text}"
-            await callback.message.edit_text(
-                text=new_text, reply_markup=builder.as_markup()
-            )
+            await callback.message.edit_text(text=new_text, reply_markup=builder.as_markup())
             await callback.answer()
 
     async def _process_wrong_ans(
@@ -324,13 +302,9 @@ class LangBot:
         variants: list[str],
         action: str,
     ) -> None:
-        text, builder = await self._generate_question(
-            chat_id, state, action, word_tr, variants
-        )
+        text, builder = await self._generate_question(chat_id, state, action, word_tr, variants)
         new_text = f"{MsgsText.WRONG_ANS.value}{text}"
-        await callback.message.edit_text(
-            text=new_text, reply_markup=builder.as_markup()
-        )
+        await callback.message.edit_text(text=new_text, reply_markup=builder.as_markup())
         await callback.answer()
 
     def _handle_add_words(self) -> None:
@@ -369,9 +343,7 @@ class LangBot:
                 callback_data=ButtonsText.DELETE_WORD.value,
             )
             builder.adjust(1)
-            await msg.answer(
-                text=MsgsText.CHOOSE_ACTION.value, reply_markup=builder.as_markup()
-            )
+            await msg.answer(text=MsgsText.CHOOSE_ACTION.value, reply_markup=builder.as_markup())
 
     def _handle_add_request(self) -> None:
         @self._dp.callback_query(F.data == ButtonsText.ADD_WORD.value)
@@ -405,11 +377,7 @@ class LangBot:
             except ValueError:
                 await msg.answer(text=MsgsText.BAD_WORD.value)
                 return
-            ans = (
-                f"{res}{MsgsText.WORD_ADDED.value}"
-                if res
-                else MsgsText.ALREADY_HAS_WORD.value
-            )
+            ans = f"{res}{MsgsText.WORD_ADDED.value}" if res else MsgsText.ALREADY_HAS_WORD.value
             await state.clear()
             await msg.answer(text=ans)
 
@@ -422,11 +390,7 @@ class LangBot:
                 await msg.answer(text=MsgsText.WRONG_WORD_INPUT.value)
                 return
             res = await self._coordinator.delete_user_word(chat_id, word)
-            ans = (
-                f"{res}{MsgsText.WORD_DELETED.value}"
-                if res
-                else MsgsText.CAN_NOT_DELETE.value
-            )
+            ans = f"{res}{MsgsText.WORD_DELETED.value}" if res else MsgsText.CAN_NOT_DELETE.value
             await state.clear()
             await msg.answer(text=ans)
 
@@ -441,9 +405,7 @@ class LangBot:
         builder.adjust(2)
         return builder
 
-    def _add_pagination_buttons(
-        self, builder: InlineKeyboardBuilder, prev: bool, next_: bool, cur_page: int
-    ):
+    def _add_pagination_buttons(self, builder: InlineKeyboardBuilder, prev: bool, next_: bool, cur_page: int):
         bottom_buttons = []
         if prev:
             bottom_buttons.append(
@@ -474,14 +436,10 @@ class LangBot:
             builder = self._build_del_words_buttons(words)
             if next_:
                 builder = self._add_pagination_buttons(builder, prev, next_, 1)
-            await callback.message.answer(
-                text="\n".join(words), reply_markup=builder.as_markup()
-            )
+            await callback.message.answer(text="\n".join(words), reply_markup=builder.as_markup())
 
     def _handle_pagination(self) -> None:
-        @self._dp.callback_query(
-            F.data.startswith((ButtonsText.FORWARD.value, ButtonsText.BACK.value))
-        )
+        @self._dp.callback_query(F.data.startswith((ButtonsText.FORWARD.value, ButtonsText.BACK.value)))
         async def handle(callback: CallbackQuery) -> None:
             chat_id = callback.message.chat.id
             cur_page = int(callback.data.split(":")[1])
@@ -489,13 +447,9 @@ class LangBot:
             if not data:
                 return
             words, prev, next_ = data
-            builder = self._add_pagination_buttons(
-                self._build_del_words_buttons(words), prev, next_, cur_page
-            )
+            builder = self._add_pagination_buttons(self._build_del_words_buttons(words), prev, next_, cur_page)
             text = "\n".join(words)
-            await callback.message.edit_text(
-                text=text, reply_markup=builder.as_markup()
-            )
+            await callback.message.edit_text(text=text, reply_markup=builder.as_markup())
             await callback.answer()
 
     def _handle_del_word_button(self) -> None:

@@ -1,13 +1,13 @@
 import asyncpg
+import pytest
 import pytest_asyncio
+
+from src.core.settings import Settings
 from src.repositories.db_repo import DbRepo
 from src.repositories.redis_repo import RedisRepo
-from src.services.redis_service import RedisService
-from src.services.db_service import DbService
 from src.services.coordinator import Coordinator
-from src.core.settings import Settings
-
-import pytest
+from src.services.db_service import DbService
+from src.services.redis_service import RedisService
 
 
 @pytest.fixture

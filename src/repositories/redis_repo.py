@@ -1,8 +1,9 @@
-import redis
 import logging
-from src.utils.log_decorator import sync_log_decorator
-from src.core.constansts import Constants
 
+import redis
+
+from src.core.constansts import Constants
+from src.utils.log_decorator import sync_log_decorator
 
 logger = logging.getLogger(__name__)
 

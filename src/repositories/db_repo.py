@@ -1,9 +1,9 @@
+import logging
 from datetime import datetime, timezone
+
 import asyncpg
 
 from src.core.constansts import Constants
-import logging
-
 from src.utils.log_decorator import async_log_decorator
 
 logger = logging.getLogger(__name__)
@@ -49,9 +49,7 @@ class DbRepo:
         async with self._pool.acquire() as conn:
             if not words:
                 return
-            values_sql = ", ".join(
-                f"(${i * 3 + 1}, ${i * 3 + 2}, ${i * 3 + 3})" for i in range(len(words))
-            )
+            values_sql = ", ".join(f"(${i * 3 + 1}, ${i * 3 + 2}, ${i * 3 + 3})" for i in range(len(words)))
             query = f"""
                     INSERT INTO words (word, translation, is_base)
                     VALUES {values_sql}
@@ -76,9 +74,7 @@ class DbRepo:
             return await conn.fetchval(query, user_id)
 
     @async_log_decorator(logger)
-    async def add_user_word(
-        self, chat_id: int, word: str, translation: str | None = None
-    ) -> bool:
+    async def add_user_word(self, chat_id: int, word: str, translation: str | None = None) -> bool:
         user_id = await self._get_user_id(chat_id)
         if await self._check_word_exists(chat_id, word):
             return False
@@ -98,9 +94,7 @@ class DbRepo:
             return True
 
     @async_log_decorator(logger)
-    async def get_random_words(
-        self, chat_id: int, is_base: bool, limit: int
-    ) -> list[asyncpg.Record]:
+    async def get_random_words(self, chat_id: int, is_base: bool, limit: int) -> list[asyncpg.Record]:
         user_id = await self._get_user_id(chat_id)
         async with self._pool.acquire() as conn:
             query = """
@@ -166,9 +160,7 @@ class DbRepo:
                     """
             return await conn.fetch(query, ids)
 
-    async def get_paginated_words(
-        self, chat_id: int, limit: int, offset: int
-    ) -> list[asyncpg.Record] | None:
+    async def get_paginated_words(self, chat_id: int, limit: int, offset: int) -> list[asyncpg.Record] | None:
         user_id = await self._get_user_id(chat_id)
         async with self._pool.acquire() as conn:
             query = """
@@ -184,9 +176,7 @@ class DbRepo:
             return await conn.fetch(query, user_id, limit, offset)
 
     @async_log_decorator(logger)
-    async def get_by_translation(
-        self, chat_id, translation: str
-    ) -> list[asyncpg.Record]:
+    async def get_by_translation(self, chat_id, translation: str) -> list[asyncpg.Record]:
         user_id = await self._get_user_id(chat_id)
         async with self._pool.acquire() as conn:
             query = """
