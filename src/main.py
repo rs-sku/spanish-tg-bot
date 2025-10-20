@@ -6,13 +6,14 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from googletrans import Translator
 from redis import Redis
 
-from src import translator_client
-from src.bot import LangBot
+from src.bot.bot import LangBot
+from src.bot.middlewares import ButtonInterceptionMsgMiddleware
 from src.core.db import Database
 from src.core.settings import Settings
 from src.repositories import db_repo, redis_repo
 from src.services import db_service, redis_service, seed_service
 from src.services.coordinator import Coordinator
+from src.utils import translator_client
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ async def main() -> None:
         coordinator = Coordinator(redis_serv, db_serv, tr_client)
         bot_obj = Bot(Settings.BOT_TOKEN)
         dp = Dispatcher(storage=MemoryStorage())
+        dp.message.middleware(ButtonInterceptionMsgMiddleware())
         bot = LangBot(dp, bot_obj, coordinator)
         await bot.start()
     finally:
