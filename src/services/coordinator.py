@@ -4,8 +4,8 @@ import logging
 from src.core.constansts import Constants
 from src.services.db_service import DbService
 from src.services.redis_service import RedisService
-from src.translator_client import TranslatorClient
 from src.utils.log_decorator import async_log_decorator
+from src.utils.translator_client import TranslatorClient
 from src.utils.word_validation import validate_word
 
 logger = logging.getLogger(__name__)
